@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Мультитул</title>
+    <link href="./styles.css" rel="stylesheet"> <!-- Подключаем сгенерированный Tailwind CSS -->
+    <script src="https://unpkg.com/lucide@latest"></script> <!-- Подключаем Lucide Icons -->
+    <style>
+        /* Базовые стили */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: #111827; /* gray-900 */
+            color: #e5e7eb; /* gray-200 */
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 200px;
+            background-color: #1f2937; /* gray-800 */
+            border-right: 1px solid #374151; /* gray-700 */
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            box-shadow: inset -2px 0 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar-header {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #f3f4f6; /* gray-100 */
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #374151; /* gray-700 */
+        }
+
+        .nav-button {
+            padding: 0.5rem 1rem;
+            margin: 0.25rem 0;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.2s;
+            text-align: center;
+            justify-content: center;
+        }
+
+        .nav-button.active {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+        }
+
+        .nav-button:not(.active) {
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+        }
+
+        .nav-button:hover:not(.active) {
+            background-color: #4b5563; /* gray-600 */
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 1rem;
+            border-top: 1px solid #374151; /* gray-700 */
+        }
+
+        .settings-button {
+            padding: 0.5rem 1rem;
+            margin: 0.25rem 0;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.2s;
+            text-align: center;
+            justify-content: center;
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+        }
+
+        .settings-button:hover {
+            background-color: #4b5563; /* gray-600 */
+        }
+
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            background-color: #111827; /* gray-900 */
+        }
+
+        .content-header {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #f3f4f6; /* gray-100 */
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .folder-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .folder-label {
+            font-weight: 500;
+            color: #d1d5db; /* gray-300 */
+            min-width: 150px;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .folder-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.5rem;
+            background-color: #374151; /* gray-700 */
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem;
+            color: #e5e7eb; /* gray-200 */
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background-color: #ef4444; /* red-500 */
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #dc2626; /* red-600 */
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #4b5563; /* gray-600 */
+            color: #d1d5db; /* gray-300 */
+        }
+
+        .btn-outline:hover {
+            background-color: #374151; /* gray-700 */
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 150px; /* Выравнивание с folder-label */
+            margin-bottom: 1rem;
+        }
+
+        .checkbox-input {
+            width: 1rem;
+            height: 1rem;
+            accent-color: #2563eb; /* blue-600 */
+        }
+
+        .checkbox-label {
+            color: #d1d5db; /* gray-300 */
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-around;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 0.75rem;
+            background-color: #374151; /* gray-700 */
+            border-radius: 0.375rem;
+            min-width: 100px;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #3b82f6; /* blue-500 */
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: #9ca3af; /* gray-400 */
+        }
+
+        .progress-container {
+            margin: 1rem 0;
+            display: none; /* Скрыто по умолчанию */
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 0.75rem;
+            background-color: #374151; /* gray-700 */
+            border-radius: 0.375rem;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #10b981; /* emerald-500 */
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .controls-row {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+        }
+
+        .log-container {
+            margin-top: 1.5rem;
+        }
+
+        .log-area {
+            width: 100%;
+            height: 150px;
+            padding: 0.75rem;
+            background-color: #111827; /* gray-900 */
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem;
+            color: #e5e7eb; /* gray-200 */
+            font-family: monospace;
+            font-size: 0.875rem;
+            resize: vertical;
+        }
+
+        .loader {
+            width: 1rem;
+            height: 1rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">Работа с PDF</div>
+
+        <button id="nav-mode1" class="nav-button active">
+            Уведомление + ЗЭПБ
+        </button>
+
+        <button id="nav-mode2" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode3" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode4" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode5" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode6" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode7" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode8" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode9" class="nav-button">
+            Режим 2
+        </button>
+
+        <button id="nav-mode10" class="nav-button">
+            Режим 2
+        </button>
+
+        <div class="sidebar-footer">
+            <button id="nav-settings" class="settings-button">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+                Настройки
+            </button>
+            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.0</div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div id="mode1-content" class="content-section">
+            <div class="content-header">
+                <i data-lucide="file-text" class="w-5 h-5"></i>
+                Уведомление + ЗЭПБ
+            </div>
+
+            <!-- Блок выбора папок -->
+            <div class="folder-section">
+                <!-- Папка ЗЭПБ -->
+                <div class="folder-row">
+                    <label class="folder-label">
+                        <i data-lucide="folder" class="w-4 h-4"></i>
+                        Папка с ЗЭПБ:
+                    </label>
+                    <input type="text" id="label-main" value="Не выбрана" readonly class="folder-input">
+                    <button id="btn-main" class="btn btn-primary">
+                        <i data-lucide="folder-search" class="w-4 h-4"></i>
+                        Выбрать
+                    </button>
+                </div>
+                <div class="checkbox-container">
+                    <input type="checkbox" id="chk-main-recursive" checked class="checkbox-input">
+                    <label for="chk-main-recursive" class="checkbox-label">искать в подпапках</label>
+                </div>
+
+                <!-- Папка Уведомлений -->
+                <div class="folder-row">
+                    <label class="folder-label">
+                        <i data-lucide="folder" class="w-4 h-4"></i>
+                        Папка с уведомлениями:
+                    </label>
+                    <input type="text" id="label-insert" value="Не выбрана" readonly class="folder-input">
+                    <button id="btn-insert" class="btn btn-primary">
+                        <i data-lucide="folder-search" class="w-4 h-4"></i>
+                        Выбрать
+                    </button>
+                </div>
+                <div class="checkbox-container">
+                    <input type="checkbox" id="chk-insert-recursive" checked class="checkbox-input">
+                    <label for="chk-insert-recursive" class="checkbox-label">искать в подпапках</label>
+                </div>
+
+                <!-- Папка Результата -->
+                <div class="folder-row">
+                    <label class="folder-label">
+                        <i data-lucide="folder" class="w-4 h-4"></i>
+                        Папка с результатами:
+                    </label>
+                    <input type="text" id="label-output" value="Не выбрана" readonly class="folder-input">
+                    <button id="btn-output" class="btn btn-primary">
+                        <i data-lucide="folder-search" class="w-4 h-4"></i>
+                        Выбрать
+                    </button>
+                </div>
+            </div>
+
+            <!-- Статус и Прогресс -->
+            <div class="status-section">
+                <div class="status-row">
+                    <div class="stat-item">
+                        <div class="stat-number" id="stats-zepb">0</div>
+                        <div class="stat-label">ЗЭПБ</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number" id="stats-notif">0</div>
+                        <div class="stat-label">Уведомления</div>
+                    </div>
+                    <div class="stat-item">
+                        <div id="stats-status" class="status-not-ready">Не готово</div>
+                    </div>
+                </div>
+
+                <div id="progress-container" class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Кнопки управления -->
+            <div class="controls-row">
+                <button id="btn-run" class="btn btn-primary" disabled>
+                    <i data-lucide="play" class="w-4 h-4"></i>
+                    Начать объединение
+                </button>
+                <button id="btn-open-output" class="btn btn-outline" disabled>
+                    <i data-lucide="folder-open" class="w-4 h-4"></i>
+                    Открыть папку
+                </button>
+                <button id="btn-clear-settings" class="btn btn-danger">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    Очистить
+                </button>
+            </div>
+
+            <!-- Журнал -->
+            <div class="log-container">
+                <textarea id="log" readonly class="log-area"></textarea>
+            </div>
+        </div>
+
+        <!-- Другие режимы (скрыты) -->
+        <div id="mode2-content" class="content-section" style="display: none;">
+            <div class="content-header">
+                <i data-lucide="file-text" class="w-5 h-5"></i>
+                Режим 2
+            </div>
+            <p>Интерфейс для Режима 2 будет здесь.</p>
+        </div>
+
+        <!-- ... другие режимы ... -->
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+    </script>
+    <script src="./renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs", // Или esnext, если Electron поддерживает
+    "lib": ["ES2022", "dom"],
+    "outDir": "./dist",
+    // Изменим rootDir, чтобы он охватывал все .ts файлы в src
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/**/*.ts",  // Компилируем все .ts файлы
+    "src/types/**/*.d.ts" // Включаем файлы объявлений
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
