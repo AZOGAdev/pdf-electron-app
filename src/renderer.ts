@@ -27,6 +27,7 @@ const btnClearSettings = document.getElementById('btn-clear-settings') as HTMLBu
 const statsZepb = document.getElementById('stats-zepb') as HTMLSpanElement;
 const statsNotif = document.getElementById('stats-notif') as HTMLSpanElement;
 const statsStatus = document.getElementById('stats-status') as HTMLSpanElement;
+const logContainer = document.getElementById('log-container') as HTMLDivElement;
 const logArea = document.getElementById('log') as HTMLTextAreaElement;
 const progressContainer = document.getElementById('progress-container') as HTMLDivElement;
 const progressBarFill = document.getElementById('progress-bar-fill') as HTMLDivElement;
@@ -47,11 +48,11 @@ const updateStats = () => {
 const checkReady = () => {
     if (mainFolder && insertFolder && outputFolder) {
         btnRun.disabled = false;
-        statsStatus.textContent = '✅ Готово';
+        statsStatus.textContent = 'Готово к объединению';
         statsStatus.className = 'status-ready';
     } else {
         btnRun.disabled = true;
-        statsStatus.textContent = '❌ Не готово';
+        statsStatus.textContent = 'Выберите все папки';
         statsStatus.className = 'status-not-ready';
     }
 };
@@ -59,10 +60,10 @@ const checkReady = () => {
 const updateFolderLabel = (labelElement: HTMLInputElement, folderPath: string | null) => {
     if (folderPath) {
         labelElement.value = folderPath;
-        labelElement.style.color = '#10b981'; // emerald-500
+        labelElement.style.color = '#111827'; // gray-900
     } else {
         labelElement.value = 'Не выбрана';
-        labelElement.style.color = '#e5e7eb'; // gray-200
+        labelElement.style.color = '#6b7280'; // gray-500
     }
 };
 
@@ -89,12 +90,10 @@ const loadSettings = async () => {
         if (typeof settings.insertRecursive === 'boolean') {
             chkInsertRecursive.checked = settings.insertRecursive;
         }
-        updateStats();
+        updateStats(); // Обновляем статистику после загрузки
         checkReady();
-        log('⚙️ Настройки загружены', 'info');
     } catch (error) {
         console.error('Error loading settings:', error);
-        log('⚠️ Ошибка загрузки настроек', 'warning');
     }
 };
 
@@ -109,13 +108,10 @@ const saveSettings = async () => {
     try {
         const success = await window.electronAPI.saveSettings(settings);
         if (success) {
-            log('💾 Настройки сохранены', 'success');
-        } else {
-            log('⚠️ Ошибка сохранения настроек', 'warning');
+            console.log('Настройки сохранены');
         }
     } catch (error) {
         console.error('Error saving settings:', error);
-        log('⚠️ Ошибка сохранения настроек', 'warning');
     }
 };
 
@@ -208,8 +204,9 @@ btnRun.addEventListener('click', async () => {
 
     log('🚀 Начинаю объединение...', 'info');
     btnRun.disabled = true;
-    progressContainer.style.display = 'block';
-    logArea.value = '';
+    progressContainer.style.display = 'block'; // Показываем прогресс-бар
+    logContainer.style.display = 'block'; // Показываем лог
+    logArea.value = ''; // Очищаем лог
 
     try {
         const result = await window.electronAPI.mergePDFs({
@@ -223,7 +220,7 @@ btnRun.addEventListener('click', async () => {
         if (result.error) {
             log(`❌ Ошибка: ${result.error}`, 'error');
         } else {
-            progressBarFill.style.width = '100%';
+            progressBarFill.style.width = '100%'; // Заполняем прогресс-бар
             result.log.forEach((msg: string) => {
                 if (msg.includes('✅')) {
                     log(msg, 'success');
@@ -244,9 +241,9 @@ btnRun.addEventListener('click', async () => {
     } finally {
         btnRun.disabled = false;
         setTimeout(() => {
-            progressContainer.style.display = 'none';
-            progressBarFill.style.width = '0%';
-        }, 1000);
+            progressContainer.style.display = 'none'; // Скрываем прогресс-бар
+            progressBarFill.style.width = '0%'; // Сбрасываем прогресс
+        }, 1000); // Задержка для визуального эффекта
     }
 });
 
