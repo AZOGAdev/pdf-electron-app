@@ -1,8 +1,8 @@
 {
   "name": "pdf-electron-app",
-  "productName": "PDF Мультитул",
+  "productName": "PDFmanager",
   "version": "1.0.0",
-  "description": "Приложение для работы с PDF файлами",
+  "description": "Application for working with PDF files",
   "main": "./dist/main.js",
   "scripts": {
     "start": "electron-forge start",
@@ -10,10 +10,11 @@
     "build:tailwind": "npx tailwindcss -i ./src/input.css -o ./src/styles.css",
     "watch:tailwind": "npx tailwindcss -i ./src/input.css -o ./src/styles.css --watch",
     "package": "npm run build && npm run build:tailwind && electron-forge package",
-    "make": "npm run build && npm run build:tailwind && electron-forge make"
+    "make": "npm run build && npm run build:tailwind && electron-forge make",
+    "publish": "npm run build && npm run build:tailwind && electron-forge publish"
   },
   "keywords": [],
-  "author": "Твое Имя",
+  "author": "azoga99",
   "license": "MIT",
   "devDependencies": {
     "@electron-forge/cli": "^7.4.0",
@@ -42,7 +43,8 @@
     "forge": {
       "packagerConfig": {
         "asar": true,
-        "icon": "assets/icon.ico"
+        "icon": "assets/icon.ico",
+        "extraResource": ["app-update.yml"]
       },
       "makers": [
         {
