@@ -26,7 +26,12 @@ const btnOpenOutput = document.getElementById('btn-open-output') as HTMLButtonEl
 const btnClearSettings = document.getElementById('btn-clear-settings') as HTMLButtonElement;
 const statsZepb = document.getElementById('stats-zepb') as HTMLSpanElement;
 const statsNotif = document.getElementById('stats-notif') as HTMLSpanElement;
+const statsOutput = document.getElementById('stats-output') as HTMLSpanElement; // Новый элемент
 const statsStatus = document.getElementById('stats-status') as HTMLSpanElement;
+const statsResults = document.getElementById('stats-results') as HTMLDivElement; // Новый элемент
+const statsSuccess = document.getElementById('stats-success') as HTMLSpanElement; // Новый элемент
+const statsSkipped = document.getElementById('stats-skipped') as HTMLSpanElement; // Новый элемент
+const statsTotal = document.getElementById('stats-total') as HTMLSpanElement; // Новый элемент
 const logContainer = document.getElementById('log-container') as HTMLDivElement;
 const logArea = document.getElementById('log') as HTMLTextAreaElement;
 const progressContainer = document.getElementById('progress-container') as HTMLDivElement;
@@ -43,6 +48,16 @@ const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 
 const updateStats = () => {
     statsZepb.textContent = Object.keys(zepbDict).length.toString();
     statsNotif.textContent = Object.keys(insertDict).length.toString();
+    // Обновляем статистику результатов при загрузке/выборе папки
+    if (outputFolder) {
+        window.electronAPI.countFilesInFolder(outputFolder).then(count => {
+            statsOutput.textContent = count.toString();
+        }).catch(() => {
+            statsOutput.textContent = '?'; // Показать ?, если папка не выбрана или ошибка
+        });
+    } else {
+        statsOutput.textContent = '0';
+    }
 };
 
 const checkReady = () => {
@@ -83,6 +98,7 @@ const loadSettings = async () => {
         if (settings.outputFolder) {
             outputFolder = settings.outputFolder;
             updateFolderLabel(labelOutput, outputFolder);
+            btnOpenOutput.disabled = false;
         }
         if (typeof settings.mainRecursive === 'boolean') {
             chkMainRecursive.checked = settings.mainRecursive;
@@ -191,6 +207,7 @@ btnOutput.addEventListener('click', async () => {
         outputFolder = folder;
         updateFolderLabel(labelOutput, folder);
         btnOpenOutput.disabled = false;
+        updateStats(); // Обновляем статистику результатов при выборе папки
         checkReady();
         saveSettings();
     }
@@ -204,9 +221,10 @@ btnRun.addEventListener('click', async () => {
 
     log('🚀 Начинаю объединение...', 'info');
     btnRun.disabled = true;
-    progressContainer.style.display = 'block'; // Показываем прогресс-бар
-    logContainer.style.display = 'block'; // Показываем лог
-    logArea.value = ''; // Очищаем лог
+    progressBarFill.style.width = '0%'; // Сбросим прогресс перед началом
+    statsResults.style.display = 'none'; // Скрываем предыдущую статистику
+    logContainer.style.display = 'block';
+    logArea.value = '';
 
     try {
         const result = await window.electronAPI.mergePDFs({
@@ -220,7 +238,7 @@ btnRun.addEventListener('click', async () => {
         if (result.error) {
             log(`❌ Ошибка: ${result.error}`, 'error');
         } else {
-            progressBarFill.style.width = '100%'; // Заполняем прогресс-бар
+            progressBarFill.style.width = '100%';
             result.log.forEach((msg: string) => {
                 if (msg.includes('✅')) {
                     log(msg, 'success');
@@ -234,16 +252,30 @@ btnRun.addEventListener('click', async () => {
             });
             log(`\n🎉 Обработка завершена!\n📊 Результаты:\n✅ Успешно объединено: ${result.processed}\n⏭️ Пропущено: ${result.skipped}\n📋 Всего обработано: ${result.total}`, 'success');
             log('📄 Лог сохранён в папке результатов.', 'info');
+
+            // Показываем итоговую статистику
+            statsSuccess.textContent = result.processed.toString();
+            statsSkipped.textContent = result.skipped.toString();
+            statsTotal.textContent = result.total.toString();
+            statsResults.style.display = 'flex'; // Показываем статистику
+
+            // Обновляем статистику результатов после завершения
+            window.electronAPI.countFilesInFolder(outputFolder).then(count => {
+                statsOutput.textContent = count.toString();
+            }).catch(() => {
+                statsOutput.textContent = '?';
+            });
         }
     } catch (error) {
         console.error('Merge error:', error);
         log(`❌ Ошибка выполнения: ${(error as Error).message}`, 'error');
     } finally {
         btnRun.disabled = false;
-        setTimeout(() => {
-            progressContainer.style.display = 'none'; // Скрываем прогресс-бар
-            progressBarFill.style.width = '0%'; // Сбрасываем прогресс
-        }, 1000); // Задержка для визуального эффекта
+        // Прогресс-бар остается видимым, но пустым после завершения
+        // setTimeout(() => {
+        //     progressContainer.style.display = 'none'; // Убираем это
+        //     progressBarFill.style.width = '0%'; // Прогресс-бар сбрасывается при следующем запуске
+        // }, 1000);
     }
 });
 
@@ -279,9 +311,89 @@ btnClearSettings.addEventListener('click', async () => {
         log('🗑️ Настройки очищены', 'warning');
     }
 });
+// --- Логика обновления ---
+const btnUpdate = document.getElementById('btn-update') as HTMLButtonElement;
+const updateStatus = document.getElementById('update-status') as HTMLSpanElement;
+
+let updateVersionAvailable: string | null = null;
+
+// Функция для проверки обновлений
+const checkForUpdates = async () => {
+    updateStatus.textContent = 'Проверка обновлений...';
+    btnUpdate.style.display = 'none';
+    try {
+        const latestVersion = await window.electronAPI.checkForUpdates();
+        // Событие 'update-available' будет вызвано автоматически, если обновление есть
+        // или 'update-not-available'
+    } catch (error) {
+        console.error('Error checking for updates:', error);
+        updateStatus.textContent = `Ошибка проверки: ${(error as Error).message}`;
+    }
+};
+
+// Слушатели событий из main процесса
+window.electronAPI.onUpdateAvailable((event, version) => {
+    console.log('Обновление доступно:', version);
+    updateVersionAvailable = version;
+    updateStatus.textContent = `Доступно обновление: v${version}`;
+    btnUpdate.style.display = 'inline-flex'; // Показываем кнопку
+});
+
+window.electronAPI.onUpdateNotAvailable((event) => {
+    console.log('Обновление не доступно.');
+    updateStatus.textContent = 'Обновлений нет.';
+    btnUpdate.style.display = 'none';
+});
+
+window.electronAPI.onUpdateError((event, error) => {
+    console.error('Ошибка обновления:', error);
+    updateStatus.textContent = `Ошибка обновления: ${error}`;
+    btnUpdate.style.display = 'none';
+});
+
+window.electronAPI.onUpdateDownloadProgress((event, percent) => {
+    console.log('Прогресс загрузки обновления:', percent);
+    updateStatus.textContent = `Загрузка обновления... ${Math.round(percent)}%`;
+    btnUpdate.textContent = 'Загружается...';
+    btnUpdate.disabled = true;
+});
+
+window.electronAPI.onUpdateDownloaded((event, version) => {
+    console.log('Обновление загружено:', version);
+    updateStatus.textContent = `Обновление v${version} загружено. Готово к установке.`;
+    btnUpdate.textContent = 'Перезапустить и установить';
+    btnUpdate.disabled = false;
+});
+
+btnUpdate.addEventListener('click', async () => {
+    if (btnUpdate.textContent?.includes('Загружается...')) {
+        // Кнопка в состоянии загрузки, ничего не делаем
+        return;
+    }
+    if (btnUpdate.textContent?.includes('Перезапустить и установить')) {
+        // Обновление загружено, устанавливаем
+        window.electronAPI.quitAndInstall();
+        return;
+    }
+    // Обновление доступно, начинаем загрузку
+    btnUpdate.textContent = 'Загружается...';
+    btnUpdate.disabled = true;
+    try {
+        await window.electronAPI.downloadUpdate();
+        // Прогресс и завершение загрузки будут обработаны слушателями выше
+    } catch (error) {
+        console.error('Error downloading update:', error);
+        updateStatus.textContent = `Ошибка загрузки: ${(error as Error).message}`;
+        btnUpdate.textContent = 'Обновить';
+        btnUpdate.disabled = false;
+        btnUpdate.style.display = 'inline-flex';
+    }
+});
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     checkReady();
+    // Проверяем обновления при загрузке
+    checkForUpdates();
 });

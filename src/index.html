@@ -36,6 +36,7 @@
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
             border-bottom: 1px solid #e5e7eb; /* gray-200 */
+            text-align: center; /* Выравнивание по центру */
         }
 
         .nav-button {
@@ -110,12 +111,20 @@
             gap: 0.5rem;
         }
 
+        .folder-section {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start; /* Выравнивание по левому краю */
+            width: 100%;
+        }
+
         .folder-row {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 0.75rem;
             margin-bottom: 1rem;
+            width: 100%;
         }
 
         .folder-label {
@@ -189,6 +198,7 @@
             gap: 0.5rem;
             margin-left: 150px; /* Выравнивание с folder-label */
             margin-bottom: 1rem;
+            width: 100%;
         }
 
         .checkbox-input {
@@ -212,6 +222,7 @@
             align-items: center;
             flex-wrap: wrap;
             gap: 0.5rem;
+            width: 100%;
         }
 
         .status-info {
@@ -231,9 +242,25 @@
             font-weight: 500;
         }
 
+        .stats-row {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+            color: #4b5563; /* gray-600 */
+            margin-top: 0.5rem;
+            width: 100%;
+        }
+
         .progress-container {
             margin: 1rem 0;
-            display: none; /* Скрыто по умолчанию */
+            width: 100%;
+            /* display: none; Убираем это */
+        }
+
+        .progress-label {
+            font-size: 0.875rem;
+            color: #4b5563; /* gray-600 */
+            margin-bottom: 0.25rem;
         }
 
         .progress-bar {
@@ -257,11 +284,13 @@
             gap: 1rem;
             margin: 1.5rem 0;
             flex-wrap: wrap;
+            width: 100%;
         }
 
         .log-container {
             margin-top: 1.5rem;
             display: none; /* Скрыто по умолчанию */
+            width: 100%;
         }
 
         .log-area {
@@ -396,14 +425,22 @@
                 <div class="status-info">
                     <span>ЗЭПБ: <span id="stats-zepb">0</span></span>
                     <span>Уведомления: <span id="stats-notif">0</span></span>
+                    <span>Результаты: <span id="stats-output">0</span></span>
                 </div>
                 <div id="stats-status" class="status-not-ready">Выберите все папки</div>
             </div>
 
-            <!-- Прогресс-бар -->
+            <!-- Прогресс-бар (всегда виден) -->
             <div id="progress-container" class="progress-container">
+                <div class="progress-label">Прогресс выполнения:</div>
                 <div class="progress-bar">
                     <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                </div>
+                <!-- Статистика после выполнения -->
+                <div id="stats-results" class="stats-row" style="display: none;">
+                    <span>Успешно: <span id="stats-success">0</span></span>
+                    <span>Пропущено: <span id="stats-skipped">0</span></span>
+                    <span>Всего: <span id="stats-total">0</span></span>
                 </div>
             </div>
 
@@ -418,6 +455,8 @@
                 <button id="btn-clear-settings" class="btn btn-primary">
                     Очистить
                 </button>
+                <button id="btn-update" class="btn btn-secondary" style="display: none;">Обновить</button>
+                <span id="update-status" class="text-sm text-gray-600">Проверка обновлений...</span>
             </div>
 
             <!-- Журнал -->

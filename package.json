@@ -21,6 +21,7 @@
     "@electron-forge/maker-rpm": "^7.4.0",
     "@electron-forge/maker-squirrel": "^7.4.0",
     "@electron-forge/maker-zip": "^7.4.0",
+    "@electron-forge/publisher-github": "^7.10.2",
     "@types/node": "^20.14.2",
     "autoprefixer": "^10.4.19",
     "electron": "^31.3.0",
@@ -29,7 +30,42 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "electron-updater": "^6.6.2",
     "fs-extra": "^11.2.0",
     "pdf-lib": "^1.17.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AZOGAdev/pdf-electron-app.git"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "asar": true,
+        "icon": "assets/icon.png"
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "Tools PDF",
+            "setupIcon": "assets/icon.png",
+            "loadingGif": "assets/install-spinner.gif"
+          }
+        }
+      ],
+      "publishers": [
+        {
+          "name": "@electron-forge/publisher-github",
+          "config": {
+            "repository": {
+              "owner": "AZOGAdev",
+              "name": "pdf-electron-app"
+            },
+            "draft": false
+          }
+        }
+      ]
+    }
   }
 }
