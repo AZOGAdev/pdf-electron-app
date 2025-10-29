@@ -42,14 +42,14 @@
     "forge": {
       "packagerConfig": {
         "asar": true,
-        "icon": "assets/icon.png"
+        "icon": "assets/icon.ico"
       },
       "makers": [
         {
           "name": "@electron-forge/maker-squirrel",
           "config": {
-            "name": "Tools PDF",
-            "setupIcon": "assets/icon.png",
+            "name": "PDFmanager",
+            "setupIcon": "assets/icon.ico",
             "loadingGif": "assets/install-spinner.gif"
           }
         }
