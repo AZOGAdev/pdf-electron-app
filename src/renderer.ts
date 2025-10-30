@@ -144,11 +144,83 @@ const saveSettings = async () => {
 };
 
 // --- Тема ---
+// --- Тема ---
 const applyTheme = (isDark: boolean) => {
     if (isDark) {
         document.documentElement.setAttribute('data-theme', 'dark');
+        // --- Устанавливаем CSS переменные для темной темы ---
+        document.documentElement.style.setProperty('--settings-btn-bg', '#374151'); // gray-700
+        document.documentElement.style.setProperty('--settings-btn-text', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--settings-btn-border', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--settings-btn-hover-bg', '#4b5563'); // gray-600
+
+        // --- Устанавливаем CSS переменные для формы обратной связи ---
+        document.documentElement.style.setProperty('--feedback-bg', '#1f2937'); // gray-800
+        document.documentElement.style.setProperty('--feedback-border', '#374151'); // gray-700
+        document.documentElement.style.setProperty('--feedback-text', '#e5e7eb'); // gray-200
+        document.documentElement.style.setProperty('--feedback-text-sm', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-label', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-input-bg', '#374151'); // gray-700
+        document.documentElement.style.setProperty('--feedback-input-border', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-input-text', '#e5e7eb'); // gray-200
+        document.documentElement.style.setProperty('--feedback-input-focus', '#3b82f6'); // blue-500
+        document.documentElement.style.setProperty('--feedback-checkbox-accent', '#3b82f6'); // blue-500
+        document.documentElement.style.setProperty('--feedback-checkbox-checked', '#3b82f6'); // blue-500
+        document.documentElement.style.setProperty('--feedback-btn-bg', '#374151'); // gray-700
+        document.documentElement.style.setProperty('--feedback-btn-text', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-btn-border', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-btn-hover-bg', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-btn-primary-bg', '#dc2626'); // red-600
+        document.documentElement.style.setProperty('--feedback-btn-primary-border', '#b91c1c'); // red-700
+        document.documentElement.style.setProperty('--feedback-btn-primary-hover-bg', '#b91c1c'); // red-700
+        document.documentElement.style.setProperty('--feedback-btn-secondary-bg', '#2563eb'); // blue-600
+        document.documentElement.style.setProperty('--feedback-btn-secondary-border', '#3b82f6'); // blue-500
+        document.documentElement.style.setProperty('--feedback-btn-secondary-hover-bg', '#1d4ed8'); // blue-700
+        document.documentElement.style.setProperty('--feedback-btn-outline-bg', 'transparent');
+        document.documentElement.style.setProperty('--feedback-btn-outline-border', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-btn-outline-text', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-btn-outline-hover-bg', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-text-xs', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-text-red', '#f87171'); // red-400
+        document.documentElement.style.setProperty('--feedback-text-green', '#10b981'); // emerald-500
+
     } else {
         document.documentElement.removeAttribute('data-theme');
+        // --- Устанавливаем CSS переменные для светлой темы ---
+        document.documentElement.style.setProperty('--settings-btn-bg', '#f3f4f6'); // gray-100
+        document.documentElement.style.setProperty('--settings-btn-text', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--settings-btn-border', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--settings-btn-hover-bg', '#e5e7eb'); // gray-200
+
+        // --- Устанавливаем CSS переменные для формы обратной связи ---
+        document.documentElement.style.setProperty('--feedback-bg', '#f3f4f6'); // gray-100
+        document.documentElement.style.setProperty('--feedback-border', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-text', '#111827'); // gray-900
+        document.documentElement.style.setProperty('--feedback-text-sm', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-label', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-input-bg', '#f9fafb'); // gray-50
+        document.documentElement.style.setProperty('--feedback-input-border', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-input-text', '#111827'); // gray-900
+        document.documentElement.style.setProperty('--feedback-input-focus', '#60a5fa'); // blue-400
+        document.documentElement.style.setProperty('--feedback-checkbox-accent', '#2563eb'); // blue-600
+        document.documentElement.style.setProperty('--feedback-checkbox-checked', '#2563eb'); // blue-600
+        document.documentElement.style.setProperty('--feedback-btn-bg', '#f3f4f6'); // gray-100
+        document.documentElement.style.setProperty('--feedback-btn-text', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-btn-border', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-btn-hover-bg', '#e5e7eb'); // gray-200
+        document.documentElement.style.setProperty('--feedback-btn-primary-bg', '#f87171'); // red-400
+        document.documentElement.style.setProperty('--feedback-btn-primary-border', '#fca5a5'); // red-300
+        document.documentElement.style.setProperty('--feedback-btn-primary-hover-bg', '#ef4444'); // red-500
+        document.documentElement.style.setProperty('--feedback-btn-secondary-bg', '#3b82f6'); // blue-500
+        document.documentElement.style.setProperty('--feedback-btn-secondary-border', '#60a5fa'); // blue-400
+        document.documentElement.style.setProperty('--feedback-btn-secondary-hover-bg', '#2563eb'); // blue-600
+        document.documentElement.style.setProperty('--feedback-btn-outline-bg', 'transparent');
+        document.documentElement.style.setProperty('--feedback-btn-outline-border', '#d1d5db'); // gray-300
+        document.documentElement.style.setProperty('--feedback-btn-outline-text', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-btn-outline-hover-bg', '#f3f4f6'); // gray-100
+        document.documentElement.style.setProperty('--feedback-text-xs', '#4b5563'); // gray-600
+        document.documentElement.style.setProperty('--feedback-text-red', '#ef4444'); // red-500
+        document.documentElement.style.setProperty('--feedback-text-green', '#10b981'); // emerald-500
     }
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
 };
@@ -157,7 +229,7 @@ const loadTheme = () => {
     const savedTheme = localStorage.getItem('theme');
     const isDark = savedTheme === 'dark' || (savedTheme === null && window.matchMedia('(prefers-color-scheme: dark)').matches);
     themeToggleCheckbox.checked = isDark;
-    applyTheme(isDark);
+    applyTheme(isDark); // Применяем тему, включая переменные
 };
 
 // --- Переключение режимов ---

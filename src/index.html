@@ -269,9 +269,14 @@
 
         .sidebar-footer {
             margin-top: auto; /* Прижимает футер вниз */
-            padding-top: 1rem;
+            padding: 1rem 0 0 0; /* Убрали padding-left/right, добавили top */
             border-top: 1px solid var(--sidebar-border); /* gray-200 */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Центрируем содержимое по горизонтали */
         }
+
+                /* ... (предыдущие стили) ... */
 
         .settings-button {
             padding: 0.5rem 1rem;
@@ -279,21 +284,50 @@
             border-radius: 0.5rem;
             font-weight: 500;
             cursor: pointer;
-            display: flex;
-            align-items: center;
+            display: inline-flex; /* Используем inline-flex для правильного выравнивания */
+            align-items: center; /* Центрируем по вертикали */
             gap: 0.5rem; /* Расстояние между иконкой и текстом */
-            transition: background-color 0.2s;
+            transition: all 0.2s ease;
             text-align: center;
             justify-content: center;
-            /* Стили, похожие на nav-button, но с акцентом */
-            background-color: #f3f4f6; /* gray-100 */
-            color: #4b5563; /* gray-600 */
-            border: 1px solid #d1d5db; /* gray-300 */
+            
+            /* Используем переменные темы */
+            background-color: var(--settings-btn-bg, #f3f4f6); /* gray-100 по умолчанию */
+            color: var(--settings-btn-text, #4b5563); /* gray-600 по умолчанию */
+            border: 1px solid var(--settings-btn-border, #d1d5db); /* gray-300 по умолчанию */
         }
 
         .settings-button:hover {
-            background-color: #e5e7eb; /* gray-200 */
-            /* Можно добавить лёгкую тень или другой эффект */
+            background-color: var(--settings-btn-hover-bg, #e5e7eb); /* gray-200 по умолчанию */
+        }
+
+        .settings-button:active {
+            transform: scale(0.98);
+        }
+
+        /* --- Темные стили --- */
+        [data-theme="dark"] .settings-button {
+            background-color: var(--settings-btn-bg-dark, #374151); /* gray-700 */
+            color: var(--settings-btn-text-dark, #d1d5db); /* gray-300 */
+            border: 1px solid var(--settings-btn-border-dark, #4b5563); /* gray-600 */
+        }
+
+        [data-theme="dark"] .settings-button:hover {
+            background-color: var(--settings-btn-hover-bg-dark, #4b5563); /* gray-600 */
+        }
+
+        /* Убедимся, что иконка имеет фиксированный размер и не растягивается */
+        .settings-button i {
+            width: 1rem; /* 16px */
+            height: 1rem;
+            /* Можно добавить flex-shrink: 0, чтобы иконка не сжималась */
+            flex-shrink: 0;
+        }
+
+        /* Стили для текста внутри кнопки */
+        .settings-button span {
+            /* Можно добавить white-space: nowrap, если хочешь, чтобы текст не переносился */
+            white-space: nowrap;
         }
 
         .stats-row {
@@ -412,6 +446,182 @@
             font-size: 0.875rem;
             color: var(--text-color);
         }
+
+                /* ... (предыдущие стили) ... */
+
+        /* --- Стили для формы обратной связи --- */
+        #feedback-form {
+            padding: 0.75rem;
+            background-color: var(--feedback-bg, #f3f4f6); /* gray-100 по умолчанию */
+            border-radius: 0.375rem;
+            border: 1px solid var(--feedback-border, #d1d5db); /* gray-300 по умолчанию */
+            color: var(--feedback-text, #111827); /* gray-900 по умолчанию */
+        }
+
+        #feedback-form .text-sm {
+            color: var(--feedback-text-sm, #4b5563); /* gray-600 по умолчанию */
+        }
+
+        #feedback-form .block {
+            color: var(--feedback-label, #4b5563); /* gray-600 по умолчанию */
+        }
+
+        #feedback-form .folder-input {
+            background-color: var(--feedback-input-bg, #f9fafb); /* gray-50 по умолчанию */
+            border: 1px solid var(--feedback-input-border, #d1d5db); /* gray-300 по умолчанию */
+            color: var(--feedback-input-text, #111827); /* gray-900 по умолчанию */
+        }
+
+        #feedback-form .folder-input:focus {
+            border-color: var(--feedback-input-focus, #60a5fa); /* blue-400 по умолчанию */
+            outline: none;
+        }
+
+        #feedback-form .checkbox-input {
+            accent-color: var(--feedback-checkbox-accent, #2563eb); /* blue-600 по умолчанию */
+        }
+
+        #feedback-form .checkbox-input:checked {
+            background-color: var(--feedback-checkbox-checked, #2563eb); /* blue-600 по умолчанию */
+        }
+
+        #feedback-form .btn {
+            background-color: var(--feedback-btn-bg, #f3f4f6); /* gray-100 по умолчанию */
+            color: var(--feedback-btn-text, #4b5563); /* gray-600 по умолчанию */
+            border: 1px solid var(--feedback-btn-border, #d1d5db); /* gray-300 по умолчанию */
+        }
+
+        #feedback-form .btn:hover {
+            background-color: var(--feedback-btn-hover-bg, #e5e7eb); /* gray-200 по умолчанию */
+        }
+
+        #feedback-form .btn-primary {
+            background-color: var(--feedback-btn-primary-bg, #f87171); /* red-400 по умолчанию */
+            color: white;
+            border: 1px solid var(--feedback-btn-primary-border, #fca5a5); /* red-300 по умолчанию */
+        }
+
+        #feedback-form .btn-primary:hover {
+            background-color: var(--feedback-btn-primary-hover-bg, #ef4444); /* red-500 по умолчанию */
+        }
+
+        #feedback-form .btn-secondary {
+            background-color: var(--feedback-btn-secondary-bg, #3b82f6); /* blue-500 по умолчанию */
+            color: white;
+            border: 1px solid var(--feedback-btn-secondary-border, #60a5fa); /* blue-400 по умолчанию */
+        }
+
+        #feedback-form .btn-secondary:hover {
+            background-color: var(--feedback-btn-secondary-hover-bg, #2563eb); /* blue-600 по умолчанию */
+        }
+
+        #feedback-form .btn-outline {
+            background-color: var(--feedback-btn-outline-bg, transparent);
+            border: 1px solid var(--feedback-btn-outline-border, #d1d5db); /* gray-300 по умолчанию */
+            color: var(--feedback-btn-outline-text, #4b5563); /* gray-600 по умолчанию */
+        }
+
+        #feedback-form .btn-outline:hover {
+            background-color: var(--feedback-btn-outline-hover-bg, #f3f4f6); /* gray-100 по умолчанию */
+        }
+
+        #feedback-form .text-xs {
+            color: var(--feedback-text-xs, #4b5563); /* gray-600 по умолчанию */
+        }
+
+        #feedback-form .text-red-500 {
+            color: var(--feedback-text-red, #ef4444); /* red-500 по умолчанию */
+        }
+
+        #feedback-form .text-green-500 {
+            color: var(--feedback-text-green, #10b981); /* emerald-500 по умолчанию */
+        }
+
+        /* --- Темные стили для формы обратной связи --- */
+        [data-theme="dark"] #feedback-form {
+            background-color: var(--feedback-bg-dark, #1f2937); /* gray-800 */
+            border: 1px solid var(--feedback-border-dark, #374151); /* gray-700 */
+            color: var(--feedback-text-dark, #e5e7eb); /* gray-200 */
+        }
+
+        [data-theme="dark"] #feedback-form .text-sm {
+            color: var(--feedback-text-sm-dark, #d1d5db); /* gray-300 */
+        }
+
+        [data-theme="dark"] #feedback-form .block {
+            color: var(--feedback-label-dark, #d1d5db); /* gray-300 */
+        }
+
+        [data-theme="dark"] #feedback-form .folder-input {
+            background-color: var(--feedback-input-bg-dark, #374151); /* gray-700 */
+            border: 1px solid var(--feedback-input-border-dark, #4b5563); /* gray-600 */
+            color: var(--feedback-input-text-dark, #e5e7eb); /* gray-200 */
+        }
+
+        [data-theme="dark"] #feedback-form .folder-input:focus {
+            border-color: var(--feedback-input-focus-dark, #3b82f6); /* blue-500 */
+        }
+
+        [data-theme="dark"] #feedback-form .checkbox-input {
+            accent-color: var(--feedback-checkbox-accent-dark, #3b82f6); /* blue-500 */
+        }
+
+        [data-theme="dark"] #feedback-form .checkbox-input:checked {
+            background-color: var(--feedback-checkbox-checked-dark, #3b82f6); /* blue-500 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn {
+            background-color: var(--feedback-btn-bg-dark, #374151); /* gray-700 */
+            color: var(--feedback-btn-text-dark, #d1d5db); /* gray-300 */
+            border: 1px solid var(--feedback-btn-border-dark, #4b5563); /* gray-600 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn:hover {
+            background-color: var(--feedback-btn-hover-bg-dark, #4b5563); /* gray-600 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn-primary {
+            background-color: var(--feedback-btn-primary-bg-dark, #dc2626); /* red-600 */
+            color: white;
+            border: 1px solid var(--feedback-btn-primary-border-dark, #b91c1c); /* red-700 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn-primary:hover {
+            background-color: var(--feedback-btn-primary-hover-bg-dark, #b91c1c); /* red-700 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn-secondary {
+            background-color: var(--feedback-btn-secondary-bg-dark, #2563eb); /* blue-600 */
+            color: white;
+            border: 1px solid var(--feedback-btn-secondary-border-dark, #3b82f6); /* blue-500 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn-secondary:hover {
+            background-color: var(--feedback-btn-secondary-hover-bg-dark, #1d4ed8); /* blue-700 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn-outline {
+            background-color: var(--feedback-btn-outline-bg-dark, transparent);
+            border: 1px solid var(--feedback-btn-outline-border-dark, #4b5563); /* gray-600 */
+            color: var(--feedback-btn-outline-text-dark, #d1d5db); /* gray-300 */
+        }
+
+        [data-theme="dark"] #feedback-form .btn-outline:hover {
+            background-color: var(--feedback-btn-outline-hover-bg-dark, #4b5563); /* gray-600 */
+        }
+
+        [data-theme="dark"] #feedback-form .text-xs {
+            color: var(--feedback-text-xs-dark, #d1d5db); /* gray-300 */
+        }
+
+        [data-theme="dark"] #feedback-form .text-red-500 {
+            color: var(--feedback-text-red-dark, #f87171); /* red-400 */
+        }
+
+        [data-theme="dark"] #feedback-form .text-green-500 {
+            color: var(--feedback-text-green-dark, #10b981); /* emerald-500 */
+        }
+
     </style>
 </head>
 <body>
@@ -459,12 +669,12 @@
         </button>
 
         <!-- Футер сайдбара с кнопкой настроек -->
-        <div class="sidebar-footer">
+         <div class="sidebar-footer">
             <button id="nav-settings" class="settings-button">
                 <i data-lucide="settings" class="w-4 h-4"></i>
-                Настройки
+                <span>Настройки</span>
             </button>
-            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.2</div>
+            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.4</div>
         </div>
     </div>
     </div>
@@ -582,7 +792,7 @@
 
         <div class="settings-item">
             <div class="settings-title">Обратная связь</div>
-            <div class="feedback-controls">
+            <div id="feedback-form" class="feedback-controls">
                 <p class="text-sm text-gray-600 mb-2">Нашли ошибку или есть предложение по улучшению?</p>
                 
                 <div class="mb-3">
