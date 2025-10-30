@@ -5,27 +5,21 @@
   "description": "Application for working with PDF files",
   "main": "./dist/main.js",
   "scripts": {
-    "start": "electron-forge start",
+    "start": "electron .",
     "build": "tsc",
     "build:tailwind": "npx tailwindcss -i ./src/input.css -o ./src/styles.css",
-    "watch:tailwind": "npx tailwindcss -i ./src/input.css -o ./src/styles.css --watch",
-    "package": "npm run build && npm run build:tailwind && electron-forge package",
-    "make": "npm run build && npm run build:tailwind && electron-forge make",
-    "publish": "npm run build && npm run build:tailwind && electron-forge publish"
+    "package": "npm run build && npm run build:tailwind",
+    "make": "npm run package && npx electron-builder --win --x64",
+    "publish": "npm run package && npx electron-builder --win --x64 --publish=always"
   },
   "keywords": [],
   "author": "azoga99",
   "license": "MIT",
   "devDependencies": {
-    "@electron-forge/cli": "^7.4.0",
-    "@electron-forge/maker-deb": "^7.4.0",
-    "@electron-forge/maker-rpm": "^7.4.0",
-    "@electron-forge/maker-squirrel": "^7.4.0",
-    "@electron-forge/maker-zip": "^7.4.0",
-    "@electron-forge/publisher-github": "^7.10.2",
     "@types/node": "^20.14.2",
     "autoprefixer": "^10.4.19",
-    "electron": "^31.3.0",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5"
@@ -39,35 +33,33 @@
     "type": "git",
     "url": "https://github.com/AZOGAdev/pdf-electron-app.git"
   },
-  "config": {
-    "forge": {
-      "packagerConfig": {
-        "asar": true,
-        "icon": "assets/icon.ico",
-        "extraResource": ["app-update.yml"]
-      },
-      "makers": [
-        {
-          "name": "@electron-forge/maker-squirrel",
-          "config": {
-            "name": "PDFmanager",
-            "setupIcon": "assets/icon.ico",
-            "loadingGif": "assets/install-spinner.gif"
-          }
-        }
+  "build": {
+    "appId": "com.azogadev.pdfmanager",
+    "productName": "PDFmanager",
+    "directories": {
+      "output": "dist-electron-builder"
+    },
+    "files": [
+      "dist/**/*",
+      "src/assets/**/*",
+      "src/styles.css",
+      "src/index.html",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
       ],
-      "publishers": [
-        {
-          "name": "@electron-forge/publisher-github",
-          "config": {
-            "repository": {
-              "owner": "AZOGAdev",
-              "name": "pdf-electron-app"
-            },
-            "draft": false
-          }
-        }
-      ]
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AZOGAdev",
+      "repo": "pdf-electron-app"
     }
   }
 }

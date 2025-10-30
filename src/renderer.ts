@@ -11,7 +11,7 @@ const navMode2 = document.getElementById('nav-mode2') as HTMLButtonElement;
 const navSettings = document.getElementById('nav-settings') as HTMLButtonElement;
 
 const mode1Content = document.getElementById('mode1-content') as HTMLDivElement;
-const mode2Content = document.getElementById('mode2-content') as HTMLDivElement;
+const settingsContent = document.getElementById('settings-content') as HTMLDivElement;
 
 const btnMain = document.getElementById('btn-main') as HTMLButtonElement;
 const labelMain = document.getElementById('label-main') as HTMLInputElement;
@@ -26,16 +26,22 @@ const btnOpenOutput = document.getElementById('btn-open-output') as HTMLButtonEl
 const btnClearSettings = document.getElementById('btn-clear-settings') as HTMLButtonElement;
 const statsZepb = document.getElementById('stats-zepb') as HTMLSpanElement;
 const statsNotif = document.getElementById('stats-notif') as HTMLSpanElement;
-const statsOutput = document.getElementById('stats-output') as HTMLSpanElement; // Новый элемент
+const statsOutput = document.getElementById('stats-output') as HTMLSpanElement;
 const statsStatus = document.getElementById('stats-status') as HTMLSpanElement;
-const statsResults = document.getElementById('stats-results') as HTMLDivElement; // Новый элемент
-const statsSuccess = document.getElementById('stats-success') as HTMLSpanElement; // Новый элемент
-const statsSkipped = document.getElementById('stats-skipped') as HTMLSpanElement; // Новый элемент
-const statsTotal = document.getElementById('stats-total') as HTMLSpanElement; // Новый элемент
+const statsResults = document.getElementById('stats-results') as HTMLDivElement;
+const statsSuccess = document.getElementById('stats-success') as HTMLSpanElement;
+const statsSkipped = document.getElementById('stats-skipped') as HTMLSpanElement;
+const statsTotal = document.getElementById('stats-total') as HTMLSpanElement;
 const logContainer = document.getElementById('log-container') as HTMLDivElement;
 const logArea = document.getElementById('log') as HTMLTextAreaElement;
 const progressContainer = document.getElementById('progress-container') as HTMLDivElement;
 const progressBarFill = document.getElementById('progress-bar-fill') as HTMLDivElement;
+
+// Элементы для вкладки Настроек
+const themeToggleCheckbox = document.getElementById('theme-toggle-checkbox') as HTMLInputElement;
+const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButtonElement;
+const updateStatusSpan = document.getElementById('update-status') as HTMLSpanElement;
+const btnUpdateApp = document.getElementById('btn-update-app') as HTMLButtonElement;
 
 // --- Функции ---
 const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -48,12 +54,11 @@ const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 
 const updateStats = () => {
     statsZepb.textContent = Object.keys(zepbDict).length.toString();
     statsNotif.textContent = Object.keys(insertDict).length.toString();
-    // Обновляем статистику результатов при загрузке/выборе папки
     if (outputFolder) {
         window.electronAPI.countFilesInFolder(outputFolder).then(count => {
             statsOutput.textContent = count.toString();
         }).catch(() => {
-            statsOutput.textContent = '?'; // Показать ?, если папка не выбрана или ошибка
+            statsOutput.textContent = '?';
         });
     } else {
         statsOutput.textContent = '0';
@@ -75,10 +80,10 @@ const checkReady = () => {
 const updateFolderLabel = (labelElement: HTMLInputElement, folderPath: string | null) => {
     if (folderPath) {
         labelElement.value = folderPath;
-        labelElement.style.color = '#111827'; // gray-900
+        labelElement.style.color = '#111827';
     } else {
         labelElement.value = 'Не выбрана';
-        labelElement.style.color = '#6b7280'; // gray-500
+        labelElement.style.color = '#6b7280';
     }
 };
 
@@ -106,7 +111,7 @@ const loadSettings = async () => {
         if (typeof settings.insertRecursive === 'boolean') {
             chkInsertRecursive.checked = settings.insertRecursive;
         }
-        updateStats(); // Обновляем статистику после загрузки
+        updateStats();
         checkReady();
     } catch (error) {
         console.error('Error loading settings:', error);
@@ -131,39 +136,94 @@ const saveSettings = async () => {
     }
 };
 
+// --- Тема ---
+const applyTheme = (isDark: boolean) => {
+    if (isDark) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+};
+
+const loadTheme = () => {
+    const savedTheme = localStorage.getItem('theme');
+    const isDark = savedTheme === 'dark' || (savedTheme === null && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    themeToggleCheckbox.checked = isDark;
+    applyTheme(isDark);
+};
+
 // --- Переключение режимов ---
 const showMode = (modeId: string) => {
     mode1Content.style.display = 'none';
-    mode2Content.style.display = 'none';
+    settingsContent.style.display = 'none';
 
     switch (modeId) {
         case 'mode1':
             mode1Content.style.display = 'block';
             break;
-        case 'mode2':
-            mode2Content.style.display = 'block';
+        case 'settings':
+            settingsContent.style.display = 'block';
             break;
         default:
             mode1Content.style.display = 'block';
     }
 
-    // Обновляем активную кнопку в боковой панели
     navMode1.classList.remove('active');
     navMode2.classList.remove('active');
+    navSettings.classList.remove('active');
 
     if (modeId === 'mode1') {
         navMode1.classList.add('active');
-    } else if (modeId === 'mode2') {
-        navMode2.classList.add('active');
+    } else if (modeId === 'settings') {
+        navSettings.classList.add('active');
     }
 };
 
-// --- Обработчики событий ---
-navMode1.addEventListener('click', () => showMode('mode1'));
-navMode2.addEventListener('click', () => showMode('mode2'));
-navSettings.addEventListener('click', () => {
-    alert('Настройки пока не реализованы.');
+// --- Обработчики событий для Настроек ---
+themeToggleCheckbox.addEventListener('change', (e) => {
+    const isDark = (e.target as HTMLInputElement).checked;
+    applyTheme(isDark);
 });
+
+btnCheckUpdate.addEventListener('click', async () => {
+    updateStatusSpan.textContent = 'Проверка обновлений...';
+    btnUpdateApp.style.display = 'none';
+    try {
+        const result = await window.electronAPI.checkForUpdates();
+        if (result) {
+            updateStatusSpan.textContent = `Доступна новая версия: ${result}`;
+            btnUpdateApp.style.display = 'inline-flex';
+        } else {
+            updateStatusSpan.textContent = 'Обновлений нет.';
+        }
+    } catch (error) {
+        console.error('Error checking for updates:', error);
+        updateStatusSpan.textContent = `Ошибка проверки: ${(error as Error).message}`;
+    }
+});
+
+btnUpdateApp.addEventListener('click', async () => {
+    updateStatusSpan.textContent = 'Загрузка обновления...';
+    btnUpdateApp.disabled = true;
+    try {
+        await window.electronAPI.downloadUpdate();
+        updateStatusSpan.textContent = 'Обновление загружено. Перезапустите приложение.';
+        btnUpdateApp.textContent = 'Перезапустить и установить';
+        btnUpdateApp.onclick = () => {
+            window.electronAPI.quitAndInstall();
+        };
+    } catch (error) {
+        console.error('Error downloading update:', error);
+        updateStatusSpan.textContent = `Ошибка загрузки: ${(error as Error).message}`;
+        btnUpdateApp.disabled = false;
+        btnUpdateApp.textContent = 'Установить обновление';
+    }
+});
+
+// --- Основные обработчики событий ---
+navMode1.addEventListener('click', () => showMode('mode1'));
+navSettings.addEventListener('click', () => showMode('settings'));
 
 btnMain.addEventListener('click', async () => {
     const originalText = btnMain.innerHTML;
@@ -207,7 +267,7 @@ btnOutput.addEventListener('click', async () => {
         outputFolder = folder;
         updateFolderLabel(labelOutput, folder);
         btnOpenOutput.disabled = false;
-        updateStats(); // Обновляем статистику результатов при выборе папки
+        updateStats();
         checkReady();
         saveSettings();
     }
@@ -221,8 +281,8 @@ btnRun.addEventListener('click', async () => {
 
     log('🚀 Начинаю объединение...', 'info');
     btnRun.disabled = true;
-    progressBarFill.style.width = '0%'; // Сбросим прогресс перед началом
-    statsResults.style.display = 'none'; // Скрываем предыдущую статистику
+    progressBarFill.style.width = '0%';
+    statsResults.style.display = 'none';
     logContainer.style.display = 'block';
     logArea.value = '';
 
@@ -253,13 +313,11 @@ btnRun.addEventListener('click', async () => {
             log(`\n🎉 Обработка завершена!\n📊 Результаты:\n✅ Успешно объединено: ${result.processed}\n⏭️ Пропущено: ${result.skipped}\n📋 Всего обработано: ${result.total}`, 'success');
             log('📄 Лог сохранён в папке результатов.', 'info');
 
-            // Показываем итоговую статистику
             statsSuccess.textContent = result.processed.toString();
             statsSkipped.textContent = result.skipped.toString();
             statsTotal.textContent = result.total.toString();
-            statsResults.style.display = 'flex'; // Показываем статистику
+            statsResults.style.display = 'flex';
 
-            // Обновляем статистику результатов после завершения
             window.electronAPI.countFilesInFolder(outputFolder).then(count => {
                 statsOutput.textContent = count.toString();
             }).catch(() => {
@@ -271,11 +329,10 @@ btnRun.addEventListener('click', async () => {
         log(`❌ Ошибка выполнения: ${(error as Error).message}`, 'error');
     } finally {
         btnRun.disabled = false;
-        // Прогресс-бар остается видимым, но пустым после завершения
-        // setTimeout(() => {
-        //     progressContainer.style.display = 'none'; // Убираем это
-        //     progressBarFill.style.width = '0%'; // Прогресс-бар сбрасывается при следующем запуске
-        // }, 1000);
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+            progressBarFill.style.width = '0%';
+        }, 1000);
     }
 });
 
@@ -311,89 +368,10 @@ btnClearSettings.addEventListener('click', async () => {
         log('🗑️ Настройки очищены', 'warning');
     }
 });
-// --- Логика обновления ---
-const btnUpdate = document.getElementById('btn-update') as HTMLButtonElement;
-const updateStatus = document.getElementById('update-status') as HTMLSpanElement;
-
-let updateVersionAvailable: string | null = null;
-
-// Функция для проверки обновлений
-const checkForUpdates = async () => {
-    updateStatus.textContent = 'Проверка обновлений...';
-    btnUpdate.style.display = 'none';
-    try {
-        const latestVersion = await window.electronAPI.checkForUpdates();
-        // Событие 'update-available' будет вызвано автоматически, если обновление есть
-        // или 'update-not-available'
-    } catch (error) {
-        console.error('Error checking for updates:', error);
-        updateStatus.textContent = `Ошибка проверки: ${(error as Error).message}`;
-    }
-};
-
-// Слушатели событий из main процесса
-window.electronAPI.onUpdateAvailable((event, version) => {
-    console.log('Обновление доступно:', version);
-    updateVersionAvailable = version;
-    updateStatus.textContent = `Доступно обновление: v${version}`;
-    btnUpdate.style.display = 'inline-flex'; // Показываем кнопку
-});
-
-window.electronAPI.onUpdateNotAvailable((event) => {
-    console.log('Обновление не доступно.');
-    updateStatus.textContent = 'Обновлений нет.';
-    btnUpdate.style.display = 'none';
-});
-
-window.electronAPI.onUpdateError((event, error) => {
-    console.error('Ошибка обновления:', error);
-    updateStatus.textContent = `Ошибка обновления: ${error}`;
-    btnUpdate.style.display = 'none';
-});
-
-window.electronAPI.onUpdateDownloadProgress((event, percent) => {
-    console.log('Прогресс загрузки обновления:', percent);
-    updateStatus.textContent = `Загрузка обновления... ${Math.round(percent)}%`;
-    btnUpdate.textContent = 'Загружается...';
-    btnUpdate.disabled = true;
-});
-
-window.electronAPI.onUpdateDownloaded((event, version) => {
-    console.log('Обновление загружено:', version);
-    updateStatus.textContent = `Обновление v${version} загружено. Готово к установке.`;
-    btnUpdate.textContent = 'Перезапустить и установить';
-    btnUpdate.disabled = false;
-});
-
-btnUpdate.addEventListener('click', async () => {
-    if (btnUpdate.textContent?.includes('Загружается...')) {
-        // Кнопка в состоянии загрузки, ничего не делаем
-        return;
-    }
-    if (btnUpdate.textContent?.includes('Перезапустить и установить')) {
-        // Обновление загружено, устанавливаем
-        window.electronAPI.quitAndInstall();
-        return;
-    }
-    // Обновление доступно, начинаем загрузку
-    btnUpdate.textContent = 'Загружается...';
-    btnUpdate.disabled = true;
-    try {
-        await window.electronAPI.downloadUpdate();
-        // Прогресс и завершение загрузки будут обработаны слушателями выше
-    } catch (error) {
-        console.error('Error downloading update:', error);
-        updateStatus.textContent = `Ошибка загрузки: ${(error as Error).message}`;
-        btnUpdate.textContent = 'Обновить';
-        btnUpdate.disabled = false;
-        btnUpdate.style.display = 'inline-flex';
-    }
-});
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {
+    loadTheme();
     loadSettings();
     checkReady();
-    // Проверяем обновления при загрузке
-    checkForUpdates();
 });
