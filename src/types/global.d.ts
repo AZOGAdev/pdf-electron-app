@@ -15,16 +15,22 @@ declare global {
       // --- НОВОЕ: Объявления для обновления ---
       checkForUpdates: () => Promise<null>; // Возвращаем null, так как результат приходит по событиям
       downloadUpdate: () => Promise<boolean>;
+      // --- НОВОЕ: Метод для автоматической установки обновления ---
       quitAndInstall: () => void;
+      onUpdateReadyToInstall: (callback: (event: any, version: string) => void) => () => void;
+      // --- НОВОЕ: Слушатель для события, что окно готово к проверке обновлений ---
+      onAppReadyForUpdateCheck: (callback: () => void) => () => void;
       // Слушатели событий обновления
+      getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
+      // --- НОВОЕ: Слушатели для событий обновления ---
       onUpdateAvailable: (callback: (event: any, version: string) => void) => () => void;
       onUpdateNotAvailable: (callback: (event: any) => void) => () => void;
       onUpdateError: (callback: (event: any, error: string) => void) => () => void;
       onUpdateDownloadProgress: (callback: (event: any, percent: number) => void) => () => void;
       onUpdateDownloaded: (callback: (event: any, version: string) => void) => () => void;
-      getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
+      onUpdateInstalling: (callback: (event: any) => void) => () => void; // <-- НОВОЕ
+      // ... (все остальные методы) ...
       openExternalUrl: (url: string) => Promise<void>;
-      onUpdateInstalling: (callback: (event: any) => void) => () => void;
     };
   }
 }

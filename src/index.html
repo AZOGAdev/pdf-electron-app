@@ -622,11 +622,11 @@
             color: var(--feedback-text-green-dark, #10b981); /* emerald-500 */
         }
 
-                /* --- Стили для всплывающего уведомления об обновлении --- */
+        /* --- Стили для всплывающего уведомления об обновлении (Toast) --- */
         .update-notification {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 20px; /* Прижимаем к низу */
+            right: 20px; /* Отступ справа */
             z-index: 1000; /* Выше других элементов */
             background-color: var(--notification-bg, #fffbeb); /* yellow-50 по умолчанию */
             border: 1px solid var(--notification-border, #fde68a); /* yellow-200 по умолчанию */
@@ -637,6 +637,14 @@
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
+            opacity: 0;
+            transform: translateY(20px); /* Начальное положение чуть ниже */
+            transition: opacity 0.3s ease, transform 0.3s ease; /* Плавное появление/исчезновение */
+        }
+
+        .update-notification:not(.hidden) {
+            opacity: 1;
+            transform: translateY(0); /* Конечное положение */
         }
 
         [data-theme="dark"] .update-notification {
@@ -671,7 +679,7 @@
             padding: 0.25rem 0.5rem;
             font-size: 0.75rem;
         }
-
+        
     </style>
 </head>
 <body>
@@ -679,7 +687,7 @@
         <div class="sidebar-header">Работа с PDF</div>
 
         <button id="nav-mode1" class="nav-button active">
-            Уведомление + ЗЭПБ
+            ЗЭПБ(с увед)
         </button>
 
         <button id="nav-mode2" class="nav-button">
@@ -724,9 +732,8 @@
                 <i data-lucide="settings" class="w-4 h-4"></i>
                 <span>Настройки</span>
             </button>
-            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.6</div>
+            <div class="text-xs text-gray-500 text-center mt-1">version 1.2.3</div>
         </div>
-    </div>
     </div>
 
     <div class="main-content">
@@ -785,11 +792,13 @@
                 <div id="stats-status" class="status-not-ready">Выберите все папки</div>
             </div>
 
+            <!-- НОВОЕ: Прогресс-бар (всегда виден) -->
             <div id="progress-container" class="progress-container">
                 <div class="progress-label">Прогресс выполнения:</div>
                 <div class="progress-bar">
                     <div id="progress-bar-fill" class="progress-bar-fill"></div>
                 </div>
+                <!-- Статистика после выполнения -->
                 <div id="stats-results" class="stats-row" style="display: none;">
                     <span>Успешно: <span id="stats-success">0</span></span>
                     <span>Пропущено: <span id="stats-skipped">0</span></span>
@@ -876,20 +885,19 @@
     </div>
     </div>
 
-    <script>
-        lucide.createIcons();
-    </script>
-    <script src="./renderer.js"></script>
-
-        <!-- Всплывающее уведомление об обновлении (по умолчанию скрыто) -->
+    <!-- Всплывающее уведомление об обновлении (по умолчанию скрыто) -->
     <div id="update-notification" class="update-notification hidden">
         <div class="update-notification-content">
-            <p class="update-notification-text">Доступно обновление. Установите его для получения последних улучшений.</p>
+            <p id="update-notification-text" class="update-notification-text">Доступна новая версия. Проверьте наличие обновлений в настройках приложения.</p>
             <div class="update-notification-actions">
-                <button id="btn-update-popup" class="btn btn-primary btn-sm">Установить</button>
                 <button id="btn-dismiss-popup" class="btn btn-outline btn-sm">Закрыть</button>
             </div>
         </div>
     </div>
+
+    <script>
+        lucide.createIcons();
+    </script>
+    <script src="./renderer.js"></script>
 </body>
 </html>

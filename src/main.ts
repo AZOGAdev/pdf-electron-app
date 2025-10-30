@@ -303,6 +303,9 @@ ipcMain.handle('download-update', async () => {
 });
 
 ipcMain.handle('quit-and-install', () => {
+  console.log('Received quit-and-install command from renderer.');
+  // <-- НОВОЕ: Устанавливаем флаг isQuitting -->
+  isQuitting = true;
   autoUpdater.quitAndInstall();
 });
 
@@ -326,27 +329,33 @@ ipcMain.handle('open-external-url', async (event, url: string) => {
 });
 
 // --- Логика обновления ---
+let updateAvailableVersion: string | null = null; // <-- НОВОЕ: Переменная для хранения версии
+
 autoUpdater.on('update-available', (info) => {
   console.log(`Update available: ${info.version}`);
-  // <-- НОВОЕ: Проверяем флаг updateDownloaded -->
-  if (!updateDownloaded) {
+  updateAvailableVersion = info.version; // <-- НОВОЕ: Сохраняем версию
+  // <-- НОВОЕ: Отправляем событие в renderer только если версия новая -->
+  const currentVersion = app.getVersion();
+  if (info.version !== currentVersion) {
     mainWindow?.webContents.send('update-available', info.version);
   } else {
-    console.log('Update is already downloaded, not sending update-available event.');
+    console.log(`Update ${info.version} is the same as current version ${currentVersion}. Not sending notification.`);
+    // Сбрасываем флаг, если версии совпадают
+    updateAvailableVersion = null;
+    // Отправляем событие, что обновлений нет
+    mainWindow?.webContents.send('update-not-available');
   }
 });
 
 autoUpdater.on('update-not-available', () => {
   console.log('Update not available.');
-  // <-- НОВОЕ: Сбрасываем флаг updateDownloaded -->
-  updateDownloaded = false;
+  updateAvailableVersion = null; // <-- НОВОЕ: Сбрасываем флаг
   mainWindow?.webContents.send('update-not-available');
 });
 
 autoUpdater.on('error', (err) => {
   console.error('Error in auto-updater:', err);
-  // <-- НОВОЕ: Сбрасываем флаг updateDownloaded при ошибке -->
-  updateDownloaded = false;
+  updateAvailableVersion = null; // <-- НОВОЕ: Сбрасываем флаг при ошибке
   mainWindow?.webContents.send('update-error', err.message);
 });
 
@@ -357,21 +366,8 @@ autoUpdater.on('download-progress', (progress) => {
 
 autoUpdater.on('update-downloaded', (info) => {
   console.log(`Update downloaded: ${info.version}`);
-  // <-- НОВОЕ: Устанавливаем флаг updateDownloaded -->
-  updateDownloaded = true;
+  updateAvailableVersion = null; // <-- НОВОЕ: Сбрасываем флаг после скачивания
   mainWindow?.webContents.send('update-downloaded', info.version);
-
-  // --- Автоматический перезапуск через 3 секунды ---
-  setTimeout(() => {
-    console.log('Initiating auto-restart after update download.');
-    mainWindow?.webContents.send('update-installing');
-    app.removeAllListeners('window-all-closed');
-    const allWindows = BrowserWindow.getAllWindows();
-    allWindows.forEach(win => win.destroy());
-    isQuitting = true;
-    console.log('Flag isQuitting set to true. Calling autoUpdater.quitAndInstall().');
-    autoUpdater.quitAndInstall();
-  }, 3000); // 3000 миллисекунд = 3 секунды
 });
 
 // --- Запуск окна ---
@@ -394,9 +390,8 @@ const createWindow = () => {
     // <-- НОВОЕ: Проверяем обновления после загрузки окна -->
     mainWindow.webContents.once('did-finish-load', () => {
         console.log('Main window loaded. Initiating auto-update check.');
-        // <-- НОВОЕ: Сбрасываем флаг updateDownloaded перед проверкой -->
-        updateDownloaded = false;
-        autoUpdater.checkForUpdates();
+        // <-- НОВОЕ: Отправляем IPC-вызов в renderer, чтобы он сам запустил проверку -->
+        mainWindow?.webContents.send('app-ready-for-update-check');
     });
 };
 
