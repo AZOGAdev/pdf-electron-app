@@ -622,6 +622,56 @@
             color: var(--feedback-text-green-dark, #10b981); /* emerald-500 */
         }
 
+                /* --- Стили для всплывающего уведомления об обновлении --- */
+        .update-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000; /* Выше других элементов */
+            background-color: var(--notification-bg, #fffbeb); /* yellow-50 по умолчанию */
+            border: 1px solid var(--notification-border, #fde68a); /* yellow-200 по умолчанию */
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 1rem;
+            max-width: 350px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        [data-theme="dark"] .update-notification {
+            background-color: var(--notification-bg-dark, #451a03); /* amber-900 */
+            border: 1px solid var(--notification-border-dark, #f59e0b); /* amber-500 */
+            color: var(--notification-text-dark, #fed7aa); /* amber-200 */
+        }
+
+        .update-notification-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .update-notification-text {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--notification-text, #92400e); /* amber-700 по умолчанию */
+        }
+
+        [data-theme="dark"] .update-notification-text {
+            color: var(--notification-text-dark, #fed7aa); /* amber-200 */
+        }
+
+        .update-notification-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+
     </style>
 </head>
 <body>
@@ -674,7 +724,7 @@
                 <i data-lucide="settings" class="w-4 h-4"></i>
                 <span>Настройки</span>
             </button>
-            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.4</div>
+            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.6</div>
         </div>
     </div>
     </div>
@@ -830,5 +880,16 @@
         lucide.createIcons();
     </script>
     <script src="./renderer.js"></script>
+
+        <!-- Всплывающее уведомление об обновлении (по умолчанию скрыто) -->
+    <div id="update-notification" class="update-notification hidden">
+        <div class="update-notification-content">
+            <p class="update-notification-text">Доступно обновление. Установите его для получения последних улучшений.</p>
+            <div class="update-notification-actions">
+                <button id="btn-update-popup" class="btn btn-primary btn-sm">Установить</button>
+                <button id="btn-dismiss-popup" class="btn btn-outline btn-sm">Закрыть</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

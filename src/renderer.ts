@@ -49,6 +49,12 @@ const feedbackIncludeLogCheckbox = document.getElementById('feedback-include-log
 const btnSendFeedback = document.getElementById('btn-send-feedback') as HTMLButtonElement;
 const feedbackStatusSpan = document.getElementById('feedback-status') as HTMLSpanElement;
 
+// Элементы для уведомления об обновлении
+const updateNotification = document.getElementById('update-notification') as HTMLDivElement;
+const btnUpdatePopup = document.getElementById('btn-update-popup') as HTMLButtonElement;
+const btnDismissPopup = document.getElementById('btn-dismiss-popup') as HTMLButtonElement;
+const updateNotificationText = document.querySelector('.update-notification-text') as HTMLParagraphElement;
+
 
 // --- Логирование ---
 /**
@@ -213,6 +219,12 @@ const applyTheme = (isDark: boolean) => {
         document.documentElement.style.setProperty('--feedback-text-xs', '#d1d5db'); // gray-300
         document.documentElement.style.setProperty('--feedback-text-red', '#f87171'); // red-400
         document.documentElement.style.setProperty('--feedback-text-green', '#10b981'); // emerald-500
+        document.documentElement.style.setProperty('--notification-bg', '#451a03'); // amber-900
+        document.documentElement.style.setProperty('--notification-border', '#f59e0b'); // amber-500
+        document.documentElement.style.setProperty('--notification-text', '#fed7aa'); // amber-200
+        document.documentElement.style.setProperty('--notification-bg-dark', '#451a03'); // amber-900
+        document.documentElement.style.setProperty('--notification-border-dark', '#f59e0b'); // amber-500
+        document.documentElement.style.setProperty('--notification-text-dark', '#fed7aa'); // amber-200
 
     } else {
         document.documentElement.removeAttribute('data-theme');
@@ -251,6 +263,12 @@ const applyTheme = (isDark: boolean) => {
         document.documentElement.style.setProperty('--feedback-text-xs', '#4b5563'); // gray-600
         document.documentElement.style.setProperty('--feedback-text-red', '#ef4444'); // red-500
         document.documentElement.style.setProperty('--feedback-text-green', '#10b981'); // emerald-500
+        document.documentElement.style.setProperty('--notification-bg', '#fffbeb'); // yellow-50
+        document.documentElement.style.setProperty('--notification-border', '#fde68a'); // yellow-200
+        document.documentElement.style.setProperty('--notification-text', '#92400e'); // amber-700
+        document.documentElement.style.setProperty('--notification-bg-dark', '#451a03'); // amber-900
+        document.documentElement.style.setProperty('--notification-border-dark', '#f59e0b'); // amber-500
+        document.documentElement.style.setProperty('--notification-text-dark', '#fed7aa'); // amber-200
     }
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
 };
@@ -472,6 +490,8 @@ window.electronAPI.onUpdateAvailable((event, version) => {
     console.log('Обновление доступно:', version);
     updateStatusSpan.textContent = `Доступно обновление: v${version}`;
     btnUpdateApp.style.display = 'inline-flex';
+    btnUpdateApp.textContent = 'Установить обновление'; // Сбрасываем текст кнопки
+    btnUpdateApp.disabled = false; // Сбрасываем состояние кнопки
 });
 
 window.electronAPI.onUpdateNotAvailable((event) => {
@@ -484,6 +504,36 @@ window.electronAPI.onUpdateError((event, error) => {
     console.error('Ошибка обновления:', error);
     updateStatusSpan.textContent = `Ошибка обновления: ${error}`;
     btnUpdateApp.style.display = 'none';
+});
+
+// --- НОВОЕ: Обработчик для уже скачанного обновления ---
+window.electronAPI.onUpdateDownloaded((event, version) => {
+    console.log(`Обновление v${version} уже скачано и готово к установке.`);
+    updateStatusSpan.textContent = `Обновление v${version} загружено. Готово к установке.`;
+    btnUpdateApp.style.display = 'inline-flex';
+    btnUpdateApp.textContent = 'Перезапустить и установить';
+    btnUpdateApp.disabled = false;
+    // Скрываем уведомление, если оно было показано
+    updateNotification.classList.add('hidden');
+    pendingUpdateVersion = version; // Сохраняем версию для потенциального использования
+
+    // Переназначаем обработчик кнопки на "Перезапустить и установить"
+    const handleRestartAndInstall = () => {
+        window.electronAPI.quitAndInstall();
+        // Отключаем обработчик, чтобы не вызывался дважды
+        btnUpdateApp.removeEventListener('click', handleRestartAndInstall);
+        btnUpdateApp.disabled = true; // Блокируем кнопку сразу после нажатия
+        btnUpdateApp.textContent = 'Установка...';
+    };
+
+    // --- ВАЖНО: Обновляем обработчик кнопки ---
+    // Убираем предыдущие обработчики, если были (на всякий случай)
+    const newBtnUpdateApp = document.getElementById('btn-update-app') as HTMLButtonElement;
+    // Создаем копию элемента, чтобы сбросить все обработчики
+    const newButton = newBtnUpdateApp.cloneNode(true) as HTMLButtonElement;
+    newBtnUpdateApp.parentNode?.replaceChild(newButton, newBtnUpdateApp);
+    newButton.addEventListener('click', handleRestartAndInstall);
+    // --- Конец обновления обработчика ---
 });
 
 // Лушатель для события установки обновления
@@ -578,6 +628,86 @@ btnSendFeedback.addEventListener('click', async () => {
     }
 });
 
+// Логика всплывающего уведомления об обновлении
+
+// Переменная для хранения версии доступного обновления
+let pendingUpdateVersion: string | null = null;
+
+// Слушатели событий из main процесса для обновлений
+window.electronAPI.onUpdateAvailable((event, version) => {
+    console.log('Update available (from main):', version);
+    pendingUpdateVersion = version;
+    updateNotificationText.textContent = `Доступно обновление до версии ${version}. Установите его для получения последних улучшений.`;
+    updateNotification.classList.remove('hidden');
+    // Обновляем статус в настройках тоже
+    updateStatusSpan.textContent = `Доступно обновление: v${version}`;
+    btnUpdateApp.style.display = 'inline-flex';
+    btnUpdateApp.textContent = 'Установить обновление'; // Сбрасываем текст кнопки
+    btnUpdateApp.disabled = false; // Сбрасываем состояние кнопки
+});
+
+window.electronAPI.onUpdateNotAvailable((event) => {
+    console.log('Update not available (from main).');
+    pendingUpdateVersion = null;
+    // Убедимся, что уведомление скрыто -->
+    updateNotification.classList.add('hidden');
+    // Обновляем статус в настройках тоже
+    updateStatusSpan.textContent = 'Обновлений нет.';
+    btnUpdateApp.style.display = 'none';
+    // Сбрасываем текст кнопки на случай, если она была изменена -->
+    btnUpdateApp.textContent = 'Установить обновление';
+    btnUpdateApp.disabled = false;
+});
+
+window.electronAPI.onUpdateError((event, error) => {
+    console.error('Update error (from main):', error);
+    pendingUpdateVersion = null;
+    updateNotification.classList.add('hidden'); // Скрываем уведомление при ошибке
+    // Обновляем статус в настройках тоже
+    updateStatusSpan.textContent = `Ошибка обновления: ${error}`;
+    btnUpdateApp.style.display = 'none';
+});
+
+// Обработчики событий для кнопок уведомления
+btnUpdatePopup.addEventListener('click', async () => {
+    if (pendingUpdateVersion) {
+        console.log(`User clicked 'Install Update' for version ${pendingUpdateVersion}`);
+        updateNotification.classList.add('hidden'); // Скрываем уведомление
+
+        // Переключаемся на вкладку настроек, чтобы пользователь видел прогресс
+        showMode('settings');
+
+        // Имитируем нажатие кнопки "Проверить обновления", чтобы запустить процесс
+        // или напрямую вызвать download & install
+        try {
+            updateStatusSpan.textContent = 'Загрузка обновления...';
+            btnUpdateApp.disabled = true; // Блокируем основную кнопку
+            btnUpdateApp.style.display = 'inline-flex'; // Убедимся, что она видна
+            btnUpdateApp.textContent = 'Загрузка...'; // Обновляем текст кнопки
+
+            const downloadSuccess = await window.electronAPI.downloadUpdate();
+            if (downloadSuccess) {
+                // autoUpdater.on('update-downloaded', ...) в main.ts сам запустит установку
+                updateStatusSpan.textContent = 'Обновление загружено. Подготовка к установке...';
+                // Кнопка "Установить" в настройках будет заменена на "Установка..." в main.ts
+                // и затем вызовется autoUpdater.quitAndInstall()
+            } else {
+                throw new Error('Не удалось загрузить обновление.');
+            }
+        } catch (error) {
+            console.error('Error in popup update flow:', error);
+            updateStatusSpan.textContent = `Ошибка: ${(error as Error).message}`;
+            btnUpdateApp.disabled = false;
+            btnUpdateApp.textContent = 'Установить обновление';
+        }
+    }
+});
+
+btnDismissPopup.addEventListener('click', () => {
+    console.log('User dismissed update notification.');
+    updateNotification.classList.add('hidden');
+    pendingUpdateVersion = null; // Сбрасываем ожидание
+});
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {

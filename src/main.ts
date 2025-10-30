@@ -10,6 +10,7 @@ import { autoUpdater } from 'electron-updater';
 // --- Глобальный флаг для отслеживания программного закрытия приложения ---
 let isQuitting = false;
 let mainWindow: BrowserWindow | null = null; // Объявляем mainWindow здесь для доступности во всех обработчиках
+let updateDownloaded = false; // <-- НОВОЕ: Флаг для отслеживания состояния скачивания
 
 // --- Функции для работы с PDF (на TypeScript/JavaScript) ---
 
@@ -327,16 +328,25 @@ ipcMain.handle('open-external-url', async (event, url: string) => {
 // --- Логика обновления ---
 autoUpdater.on('update-available', (info) => {
   console.log(`Update available: ${info.version}`);
-  mainWindow?.webContents.send('update-available', info.version);
+  // <-- НОВОЕ: Проверяем флаг updateDownloaded -->
+  if (!updateDownloaded) {
+    mainWindow?.webContents.send('update-available', info.version);
+  } else {
+    console.log('Update is already downloaded, not sending update-available event.');
+  }
 });
 
 autoUpdater.on('update-not-available', () => {
   console.log('Update not available.');
+  // <-- НОВОЕ: Сбрасываем флаг updateDownloaded -->
+  updateDownloaded = false;
   mainWindow?.webContents.send('update-not-available');
 });
 
 autoUpdater.on('error', (err) => {
   console.error('Error in auto-updater:', err);
+  // <-- НОВОЕ: Сбрасываем флаг updateDownloaded при ошибке -->
+  updateDownloaded = false;
   mainWindow?.webContents.send('update-error', err.message);
 });
 
@@ -347,21 +357,19 @@ autoUpdater.on('download-progress', (progress) => {
 
 autoUpdater.on('update-downloaded', (info) => {
   console.log(`Update downloaded: ${info.version}`);
+  // <-- НОВОЕ: Устанавливаем флаг updateDownloaded -->
+  updateDownloaded = true;
   mainWindow?.webContents.send('update-downloaded', info.version);
 
   // --- Автоматический перезапуск через 3 секунды ---
   setTimeout(() => {
     console.log('Initiating auto-restart after update download.');
-    // Отправляем событие в renderer, чтобы он мог показать сообщение
     mainWindow?.webContents.send('update-installing');
-    // Закрываем все окна
-    app.removeAllListeners('window-all-closed'); // Убираем стандартный обработчик
+    app.removeAllListeners('window-all-closed');
     const allWindows = BrowserWindow.getAllWindows();
-    allWindows.forEach(win => win.destroy()); // destroy() более надежен для закрытия перед quitAndInstall
-    // Устанавливаем флаг, что мы инициируем закрытие
+    allWindows.forEach(win => win.destroy());
     isQuitting = true;
     console.log('Flag isQuitting set to true. Calling autoUpdater.quitAndInstall().');
-    // Запускаем установку и перезапуск
     autoUpdater.quitAndInstall();
   }, 3000); // 3000 миллисекунд = 3 секунды
 });
@@ -382,8 +390,14 @@ const createWindow = () => {
 
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
-    // --- Отладка: Открыть DevTools ---
-    // mainWindow.webContents.openDevTools();
+    // --- Логика обновления ---
+    // <-- НОВОЕ: Проверяем обновления после загрузки окна -->
+    mainWindow.webContents.once('did-finish-load', () => {
+        console.log('Main window loaded. Initiating auto-update check.');
+        // <-- НОВОЕ: Сбрасываем флаг updateDownloaded перед проверкой -->
+        updateDownloaded = false;
+        autoUpdater.checkForUpdates();
+    });
 };
 
 app.whenReady().then(() => {
@@ -410,6 +424,4 @@ app.on('window-all-closed', () => {
     } else {
         console.log("isQuitting is true. Skipping standard quit logic.");
     }
-    // Если isQuitting=false, стандартное поведение - закрыть приложение (для macOS).
-    // Но так как мы установили isQuitting=true перед quitAndInstall, этого происходить не должно.
 });
