@@ -277,12 +277,15 @@ let mainWindow: BrowserWindow | null = null;
 
 ipcMain.handle('check-for-updates', async () => {
   try {
-    const result = await autoUpdater.checkForUpdates();
-    console.log('Update check result:', result);
-    // autoUpdater будет генерировать события, которые мы обработаем ниже
-    return result ? result.updateInfo.version : null;
+    // Запускаем проверку. Результат придёт в виде событий.
+    // Мы не возвращаем версию напрямую, потому что autoUpdater сам решает, есть ли обновление.
+    autoUpdater.checkForUpdates();
+    // Возвращаем null или undefined. Renderer будет ждать события.
+    return null;
   } catch (error) {
     console.error('Error checking for updates:', error);
+    // Отправляем ошибку через событие, если нужно, или просто возвращаем null
+    mainWindow?.webContents.send('update-error', (error as Error).message);
     return null;
   }
 });
@@ -295,6 +298,25 @@ ipcMain.handle('download-update', async () => {
   } catch (error) {
     console.error('Error downloading update:', error);
     return false;
+  }
+});
+
+// IPC Handler для получения информации о приложении 
+ipcMain.handle('get-app-info', async () => {
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  };
+});
+
+ipcMain.handle('open-external-url', async (event, url: string) => {
+  try {
+    await shell.openExternal(url);
+    return true; // Успех
+  } catch (error) {
+    console.error(`Failed to open URL ${url}:`, error);
+    throw error; // Вызывает reject в promise на стороне renderer
   }
 });
 

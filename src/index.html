@@ -464,7 +464,7 @@
                 <i data-lucide="settings" class="w-4 h-4"></i>
                 Настройки
             </button>
-            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.0</div>
+            <div class="text-xs text-gray-500 text-center mt-1">version 1.0.2</div>
         </div>
     </div>
     </div>
@@ -579,6 +579,40 @@
                 <button id="btn-update-app" class="btn btn-primary" style="display: none;">Установить обновление</button>
             </div>
         </div>
+
+        <div class="settings-item">
+            <div class="settings-title">Обратная связь</div>
+            <div class="feedback-controls">
+                <p class="text-sm text-gray-600 mb-2">Нашли ошибку или есть предложение по улучшению?</p>
+                
+                <div class="mb-3">
+                    <label for="feedback-type" class="block text-xs font-medium text-gray-700 mb-1">Тип сообщения</label>
+                    <select id="feedback-type" class="folder-input w-full text-sm">
+                        <option value="bug">Ошибка</option>
+                        <option value="feature">Предложение по улучшению</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="feedback-message" class="block text-xs font-medium text-gray-700 mb-1">Сообщение *</label>
+                    <textarea id="feedback-message" rows="4" class="folder-input w-full text-sm" placeholder="Опишите проблему или предложение..."></textarea>
+                </div>
+
+                <div class="flex items-center mb-4">
+                    <input type="checkbox" id="feedback-include-log" class="checkbox-input mr-2">
+                    <label for="feedback-include-log" class="text-xs text-gray-600">Приложить последний лог (поможет быстрее решить проблему)</label>
+                </div>
+
+                <div class="flex flex-wrap items-center">
+                    <button id="btn-send-feedback" class="btn btn-outline text-sm">
+                        Отправить Email
+                    </button>
+                    <span id="feedback-status" class="ml-3 text-xs"></span>
+                </div>
+            </div>
+        </div>
+    </div>
     </div>
     </div>
 

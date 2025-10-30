@@ -4,6 +4,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     loadSettings: () => ipcRenderer.invoke('load-settings'),
+    getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+    openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
     saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings),
     mergePDFs: (options: any) => ipcRenderer.invoke('merge-pdfs', options),
     openFolder: (folderPath: string) => ipcRenderer.invoke('open-folder', folderPath),

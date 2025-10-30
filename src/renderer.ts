@@ -43,6 +43,13 @@ const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButton
 const updateStatusSpan = document.getElementById('update-status') as HTMLSpanElement;
 const btnUpdateApp = document.getElementById('btn-update-app') as HTMLButtonElement;
 
+// Элементы для формы обратной связи 
+const feedbackTypeSelect = document.getElementById('feedback-type') as HTMLSelectElement;
+const feedbackMessageTextarea = document.getElementById('feedback-message') as HTMLTextAreaElement;
+const feedbackIncludeLogCheckbox = document.getElementById('feedback-include-log') as HTMLInputElement;
+const btnSendFeedback = document.getElementById('btn-send-feedback') as HTMLButtonElement;
+const feedbackStatusSpan = document.getElementById('feedback-status') as HTMLSpanElement;
+
 // --- Функции ---
 const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -368,6 +375,101 @@ btnClearSettings.addEventListener('click', async () => {
         log('🗑️ Настройки очищены', 'warning');
     }
 });
+
+// --- НОВОЕ: Логика обратной связи ---
+
+btnSendFeedback.addEventListener('click', async () => {
+    const type = feedbackTypeSelect.value;
+    const message = feedbackMessageTextarea.value.trim();
+    const includeLog = feedbackIncludeLogCheckbox.checked;
+
+    // --- Сброс статуса ---
+    feedbackStatusSpan.textContent = '';
+    feedbackStatusSpan.className = '';
+
+    if (!message) {
+        feedbackStatusSpan.textContent = 'Пожалуйста, введите сообщение.';
+        feedbackStatusSpan.className = 'text-red-500 text-xs';
+        return;
+    }
+
+    btnSendFeedback.disabled = true;
+    feedbackStatusSpan.textContent = 'Открытие почтового клиента...';
+    feedbackStatusSpan.className = 'text-gray-500 text-xs';
+
+    try {
+        // --- Сбор информации для письма ---
+        // Примечание: process.platform и app.getVersion недоступны напрямую в renderer.
+        // Нужно получить их через IPC из main процесса.
+        // Пока используем заглушки или запросим позже.
+
+        let osPlatform = 'unknown';
+        let appVersion = 'unknown';
+        let osArch = 'unknown';
+        try {
+            const appInfo = await window.electronAPI.getAppInfo();
+            osPlatform = appInfo.platform;
+            appVersion = appInfo.version;
+            osArch = appInfo.arch;
+        } catch (infoError) {
+            console.warn('Could not get app info for feedback:', infoError);
+        }
+
+        // Определяем тему письма
+        let subjectPrefix = '';
+        if (type === 'bug') {
+            subjectPrefix = '[Ошибка]';
+        } else if (type === 'feature') {
+            subjectPrefix = '[Предложение]';
+        } else {
+            subjectPrefix = '[Обратная связь]';
+        }
+        const subject = `[PDFmanager] ${subjectPrefix} от v${appVersion}`;
+
+        // Формируем тело письма
+        let body = `Сообщение:\n${message}\n\n`;
+
+        if (includeLog && logArea.value.trim()) {
+            body += `--- Лог ---\n${logArea.value.trim()}\n\n`;
+        }
+
+        body += `--- Информация о системе ---\n`;
+        body += `Версия приложения: ${appVersion}\n`;
+        body += `Операционная система: ${osPlatform}\n`;
+        body += `Архитектура: ${osArch}\n`;
+        // Можно добавить язык системы, дату и т.д.
+
+        // Кодируем для URL
+        const encodedSubject = encodeURIComponent(subject);
+        const encodedBody = encodeURIComponent(body);
+
+        // Формируем mailto-ссылку
+        const mailtoLink = `mailto:azoga99@gmail.com?subject=${encodedSubject}&body=${encodedBody}`;
+
+        // Открываем почтовый клиент пользователя
+        await window.electronAPI.openExternalUrl(mailtoLink);
+
+        feedbackStatusSpan.textContent = 'Почтовый клиент открыт.';
+        feedbackStatusSpan.className = 'text-green-500 text-xs';
+        feedbackMessageTextarea.value = ''; // Очищаем поле после отправки
+
+        // Через некоторое время убираем сообщение
+        setTimeout(() => {
+            if (feedbackStatusSpan.textContent === 'Почтовый клиент открыт.') {
+                feedbackStatusSpan.textContent = '';
+                feedbackStatusSpan.className = '';
+            }
+        }, 5000);
+
+    } catch (error) {
+        console.error('Error preparing feedback:', error);
+        feedbackStatusSpan.textContent = `Ошибка: ${(error as Error).message}`;
+        feedbackStatusSpan.className = 'text-red-500 text-xs';
+    } finally {
+        btnSendFeedback.disabled = false;
+    }
+});
+// --- Конец логики обратной связи ---
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {
