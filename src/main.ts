@@ -1,3 +1,4 @@
+// src/main.ts
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs-extra';
@@ -5,6 +6,10 @@ import { PDFDocument } from 'pdf-lib';
 import { promises as fsPromises } from 'fs';
 import { Dirent } from 'fs';
 import { autoUpdater } from 'electron-updater';
+
+// --- Глобальный флаг для отслеживания программного закрытия приложения ---
+let isQuitting = false;
+let mainWindow: BrowserWindow | null = null; // Объявляем mainWindow здесь для доступности во всех обработчиках
 
 // --- Функции для работы с PDF (на TypeScript/JavaScript) ---
 
@@ -253,9 +258,6 @@ ipcMain.handle('build-dict', async (event, type: 'zepb' | 'insert', folderPath: 
   }
 });
 
-// --- IPC Handlers ---
-// ... (все остальные обработчики) ...
-
 // --- НОВЫЙ IPC Handler для подсчета файлов в папке ---
 ipcMain.handle('count-files-in-folder', async (event, folderPath: string) => {
   try {
@@ -273,8 +275,6 @@ ipcMain.handle('count-files-in-folder', async (event, folderPath: string) => {
 });
 
 // --- IPC Handlers для обновления ---
-let mainWindow: BrowserWindow | null = null;
-
 ipcMain.handle('check-for-updates', async () => {
   try {
     // Запускаем проверку. Результат придёт в виде событий.
@@ -301,7 +301,11 @@ ipcMain.handle('download-update', async () => {
   }
 });
 
-// IPC Handler для получения информации о приложении 
+ipcMain.handle('quit-and-install', () => {
+  autoUpdater.quitAndInstall();
+});
+
+// --- IPC Handlers для обратной связи ---
 ipcMain.handle('get-app-info', async () => {
   return {
     version: app.getVersion(),
@@ -320,8 +324,46 @@ ipcMain.handle('open-external-url', async (event, url: string) => {
   }
 });
 
-ipcMain.handle('quit-and-install', () => {
-  autoUpdater.quitAndInstall();
+// --- Логика обновления ---
+autoUpdater.on('update-available', (info) => {
+  console.log(`Update available: ${info.version}`);
+  mainWindow?.webContents.send('update-available', info.version);
+});
+
+autoUpdater.on('update-not-available', () => {
+  console.log('Update not available.');
+  mainWindow?.webContents.send('update-not-available');
+});
+
+autoUpdater.on('error', (err) => {
+  console.error('Error in auto-updater:', err);
+  mainWindow?.webContents.send('update-error', err.message);
+});
+
+autoUpdater.on('download-progress', (progress) => {
+  console.log(`Download progress: ${progress.percent}%`);
+  mainWindow?.webContents.send('update-download-progress', progress.percent);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log(`Update downloaded: ${info.version}`);
+  mainWindow?.webContents.send('update-downloaded', info.version);
+
+  // --- Автоматический перезапуск через 3 секунды ---
+  setTimeout(() => {
+    console.log('Initiating auto-restart after update download.');
+    // Отправляем событие в renderer, чтобы он мог показать сообщение
+    mainWindow?.webContents.send('update-installing');
+    // Закрываем все окна
+    app.removeAllListeners('window-all-closed'); // Убираем стандартный обработчик
+    const allWindows = BrowserWindow.getAllWindows();
+    allWindows.forEach(win => win.destroy()); // destroy() более надежен для закрытия перед quitAndInstall
+    // Устанавливаем флаг, что мы инициируем закрытие
+    isQuitting = true;
+    console.log('Flag isQuitting set to true. Calling autoUpdater.quitAndInstall().');
+    // Запускаем установку и перезапуск
+    autoUpdater.quitAndInstall();
+  }, 3000); // 3000 миллисекунд = 3 секунды
 });
 
 // --- Запуск окна ---
@@ -340,35 +382,8 @@ const createWindow = () => {
 
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
-    // --- Логика обновления ---
-    autoUpdater.on('update-available', (info) => {
-      console.log(`Update available: ${info.version}`);
-      mainWindow?.webContents.send('update-available', info.version);
-    });
-
-    autoUpdater.on('update-not-available', () => {
-      console.log('Update not available.');
-      mainWindow?.webContents.send('update-not-available');
-    });
-
-    autoUpdater.on('error', (err) => {
-      console.error('Error in auto-updater:', err);
-      mainWindow?.webContents.send('update-error', err.message);
-    });
-
-    autoUpdater.on('download-progress', (progress) => {
-      console.log(`Download progress: ${progress.percent}%`);
-      mainWindow?.webContents.send('update-download-progress', progress.percent);
-    });
-
-    autoUpdater.on('update-downloaded', (info) => {
-      console.log(`Update downloaded: ${info.version}`);
-      mainWindow?.webContents.send('update-downloaded', info.version);
-    });
-
-    // --- Проверяем обновления при запуске ---
-    // autoUpdater.checkForUpdatesAndNotify(); // Простой способ, но мы хотим больше контроля
-    // autoUpdater.checkForUpdates(); // Для ручного вызова из renderer
+    // --- Отладка: Открыть DevTools ---
+    // mainWindow.webContents.openDevTools();
 };
 
 app.whenReady().then(() => {
@@ -381,8 +396,20 @@ app.whenReady().then(() => {
     });
 });
 
+// --- Обновлённый обработчик window-all-closed ---
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
+    console.log(`App received 'window-all-closed'. isQuitting flag is: ${isQuitting}`);
+    // Если мы сами инициировали закрытие (isQuitting=true), не завершаем приложение здесь,
+    // так как autoUpdater.quitAndInstall() сам его завершит и перезапустит.
+    if (!isQuitting) {
+        console.log("isQuitting is false. Proceeding with standard quit logic.");
+        if (process.platform !== 'darwin') {
+            console.log("Platform is not darwin. Quitting app.");
+            app.quit();
+        }
+    } else {
+        console.log("isQuitting is true. Skipping standard quit logic.");
     }
+    // Если isQuitting=false, стандартное поведение - закрыть приложение (для macOS).
+    // Но так как мы установили isQuitting=true перед quitAndInstall, этого происходить не должно.
 });

@@ -24,6 +24,7 @@ declare global {
       onUpdateDownloaded: (callback: (event: any, version: string) => void) => () => void;
       getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
       openExternalUrl: (url: string) => Promise<void>;
+      onUpdateInstalling: (callback: (event: any) => void) => () => void;
     };
   }
 }

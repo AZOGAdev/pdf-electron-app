@@ -7,7 +7,6 @@ let zepbDict: Record<string, string> = {};
 
 // --- DOM Elements ---
 const navMode1 = document.getElementById('nav-mode1') as HTMLButtonElement;
-const navMode2 = document.getElementById('nav-mode2') as HTMLButtonElement;
 const navSettings = document.getElementById('nav-settings') as HTMLButtonElement;
 
 const mode1Content = document.getElementById('mode1-content') as HTMLDivElement;
@@ -43,14 +42,20 @@ const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButton
 const updateStatusSpan = document.getElementById('update-status') as HTMLSpanElement;
 const btnUpdateApp = document.getElementById('btn-update-app') as HTMLButtonElement;
 
-// Элементы для формы обратной связи 
+// Элементы для формы обратной связи
 const feedbackTypeSelect = document.getElementById('feedback-type') as HTMLSelectElement;
 const feedbackMessageTextarea = document.getElementById('feedback-message') as HTMLTextAreaElement;
 const feedbackIncludeLogCheckbox = document.getElementById('feedback-include-log') as HTMLInputElement;
 const btnSendFeedback = document.getElementById('btn-send-feedback') as HTMLButtonElement;
 const feedbackStatusSpan = document.getElementById('feedback-status') as HTMLSpanElement;
 
-// --- Функции ---
+
+// --- Логирование ---
+/**
+ * Добавляет сообщение в лог с временной меткой.
+ * @param message Текст сообщения.
+ * @param level Уровень логирования (info, success, warning, error).
+ */
 const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     const prefix = `[${timestamp}] `;
@@ -58,6 +63,11 @@ const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 
     logArea.scrollTop = logArea.scrollHeight;
 };
 
+
+// --- Статистика и Состояние ---
+/**
+ * Обновляет отображаемую статистику (кол-во файлов).
+ */
 const updateStats = () => {
     statsZepb.textContent = Object.keys(zepbDict).length.toString();
     statsNotif.textContent = Object.keys(insertDict).length.toString();
@@ -72,6 +82,9 @@ const updateStats = () => {
     }
 };
 
+/**
+ * Проверяет, готово ли приложение к запуску (выбраны ли все папки).
+ */
 const checkReady = () => {
     if (mainFolder && insertFolder && outputFolder) {
         btnRun.disabled = false;
@@ -84,6 +97,11 @@ const checkReady = () => {
     }
 };
 
+/**
+ * Обновляет текст и цвет метки выбранной папки.
+ * @param labelElement Элемент input для метки.
+ * @param folderPath Путь к папке или null.
+ */
 const updateFolderLabel = (labelElement: HTMLInputElement, folderPath: string | null) => {
     if (folderPath) {
         labelElement.value = folderPath;
@@ -94,6 +112,11 @@ const updateFolderLabel = (labelElement: HTMLInputElement, folderPath: string | 
     }
 };
 
+
+// --- Настройки ---
+/**
+ * Загружает сохраненные настройки из файла.
+ */
 const loadSettings = async () => {
     try {
         const settings = await window.electronAPI.loadSettings();
@@ -125,6 +148,9 @@ const loadSettings = async () => {
     }
 };
 
+/**
+ * Сохраняет текущие настройки в файл.
+ */
 const saveSettings = async () => {
     const settings = {
         mainFolder,
@@ -143,8 +169,12 @@ const saveSettings = async () => {
     }
 };
 
+
 // --- Тема ---
-// --- Тема ---
+/**
+ * Применяет выбранную тему (светлая/темная) и устанавливает CSS переменные.
+ * @param isDark True для темной темы, false для светлой.
+ */
 const applyTheme = (isDark: boolean) => {
     if (isDark) {
         document.documentElement.setAttribute('data-theme', 'dark');
@@ -225,14 +255,22 @@ const applyTheme = (isDark: boolean) => {
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
 };
 
+/**
+ * Загружает сохраненную тему из localStorage или определяет системную.
+ */
 const loadTheme = () => {
     const savedTheme = localStorage.getItem('theme');
     const isDark = savedTheme === 'dark' || (savedTheme === null && window.matchMedia('(prefers-color-scheme: dark)').matches);
     themeToggleCheckbox.checked = isDark;
-    applyTheme(isDark); // Применяем тему, включая переменные
+    applyTheme(isDark);
 };
 
-// --- Переключение режимов ---
+
+// --- Навигация ---
+/**
+ * Переключает отображение активной вкладки (режима).
+ * @param modeId Идентификатор режима ('mode1', 'settings').
+ */
 const showMode = (modeId: string) => {
     mode1Content.style.display = 'none';
     settingsContent.style.display = 'none';
@@ -249,7 +287,6 @@ const showMode = (modeId: string) => {
     }
 
     navMode1.classList.remove('active');
-    navMode2.classList.remove('active');
     navSettings.classList.remove('active');
 
     if (modeId === 'mode1') {
@@ -259,48 +296,8 @@ const showMode = (modeId: string) => {
     }
 };
 
-// --- Обработчики событий для Настроек ---
-themeToggleCheckbox.addEventListener('change', (e) => {
-    const isDark = (e.target as HTMLInputElement).checked;
-    applyTheme(isDark);
-});
 
-btnCheckUpdate.addEventListener('click', async () => {
-    updateStatusSpan.textContent = 'Проверка обновлений...';
-    btnUpdateApp.style.display = 'none';
-    try {
-        const result = await window.electronAPI.checkForUpdates();
-        if (result) {
-            updateStatusSpan.textContent = `Доступна новая версия: ${result}`;
-            btnUpdateApp.style.display = 'inline-flex';
-        } else {
-            updateStatusSpan.textContent = 'Обновлений нет.';
-        }
-    } catch (error) {
-        console.error('Error checking for updates:', error);
-        updateStatusSpan.textContent = `Ошибка проверки: ${(error as Error).message}`;
-    }
-});
-
-btnUpdateApp.addEventListener('click', async () => {
-    updateStatusSpan.textContent = 'Загрузка обновления...';
-    btnUpdateApp.disabled = true;
-    try {
-        await window.electronAPI.downloadUpdate();
-        updateStatusSpan.textContent = 'Обновление загружено. Перезапустите приложение.';
-        btnUpdateApp.textContent = 'Перезапустить и установить';
-        btnUpdateApp.onclick = () => {
-            window.electronAPI.quitAndInstall();
-        };
-    } catch (error) {
-        console.error('Error downloading update:', error);
-        updateStatusSpan.textContent = `Ошибка загрузки: ${(error as Error).message}`;
-        btnUpdateApp.disabled = false;
-        btnUpdateApp.textContent = 'Установить обновление';
-    }
-});
-
-// --- Основные обработчики событий ---
+// --- Обработчики Основного Режима ---
 navMode1.addEventListener('click', () => showMode('mode1'));
 navSettings.addEventListener('click', () => showMode('settings'));
 
@@ -448,14 +445,65 @@ btnClearSettings.addEventListener('click', async () => {
     }
 });
 
-// --- НОВОЕ: Логика обратной связи ---
 
+// --- Обработчики Настроек ---
+themeToggleCheckbox.addEventListener('change', (e) => {
+    const isDark = (e.target as HTMLInputElement).checked;
+    applyTheme(isDark);
+});
+
+btnCheckUpdate.addEventListener('click', async () => {
+    updateStatusSpan.textContent = 'Проверка обновлений...';
+    btnUpdateApp.style.display = 'none';
+    try {
+        // Вызываем проверку обновлений в main процессе.
+        // main процесс сам отправит нам событие 'update-available' или 'update-not-available'.
+        await window.electronAPI.checkForUpdates();
+        // Мы не обрабатываем результат напрямую, потому что он придёт по событию.
+        // Пока ждём событие, показываем "Проверка обновлений...".
+    } catch (error) {
+        console.error('Error triggering update check:', error);
+        updateStatusSpan.textContent = `Ошибка проверки: ${(error as Error).message}`;
+    }
+});
+
+// Слушатели событий обновления из main процесса
+window.electronAPI.onUpdateAvailable((event, version) => {
+    console.log('Обновление доступно:', version);
+    updateStatusSpan.textContent = `Доступно обновление: v${version}`;
+    btnUpdateApp.style.display = 'inline-flex';
+});
+
+window.electronAPI.onUpdateNotAvailable((event) => {
+    console.log('Обновление не доступно.');
+    updateStatusSpan.textContent = 'Обновлений нет.';
+    btnUpdateApp.style.display = 'none';
+});
+
+window.electronAPI.onUpdateError((event, error) => {
+    console.error('Ошибка обновления:', error);
+    updateStatusSpan.textContent = `Ошибка обновления: ${error}`;
+    btnUpdateApp.style.display = 'none';
+});
+
+// Лушатель для события установки обновления
+window.electronAPI.onUpdateInstalling((event) => {
+    console.log('Начинается установка обновления...');
+    updateStatusSpan.textContent = 'Установка обновления...';
+    btnUpdateApp.disabled = true;
+    btnUpdateApp.textContent = 'Установка...';
+});
+
+
+// --- Обратная Связь ---
+/**
+ * Отправляет отзыв пользователя через почтовый клиент.
+ */
 btnSendFeedback.addEventListener('click', async () => {
     const type = feedbackTypeSelect.value;
     const message = feedbackMessageTextarea.value.trim();
     const includeLog = feedbackIncludeLogCheckbox.checked;
 
-    // --- Сброс статуса ---
     feedbackStatusSpan.textContent = '';
     feedbackStatusSpan.className = '';
 
@@ -470,11 +518,6 @@ btnSendFeedback.addEventListener('click', async () => {
     feedbackStatusSpan.className = 'text-gray-500 text-xs';
 
     try {
-        // --- Сбор информации для письма ---
-        // Примечание: process.platform и app.getVersion недоступны напрямую в renderer.
-        // Нужно получить их через IPC из main процесса.
-        // Пока используем заглушки или запросим позже.
-
         let osPlatform = 'unknown';
         let appVersion = 'unknown';
         let osArch = 'unknown';
@@ -487,7 +530,6 @@ btnSendFeedback.addEventListener('click', async () => {
             console.warn('Could not get app info for feedback:', infoError);
         }
 
-        // Определяем тему письма
         let subjectPrefix = '';
         if (type === 'bug') {
             subjectPrefix = '[Ошибка]';
@@ -498,7 +540,6 @@ btnSendFeedback.addEventListener('click', async () => {
         }
         const subject = `[PDFmanager] ${subjectPrefix} от v${appVersion}`;
 
-        // Формируем тело письма
         let body = `Сообщение:\n${message}\n\n`;
 
         if (includeLog && logArea.value.trim()) {
@@ -509,23 +550,18 @@ btnSendFeedback.addEventListener('click', async () => {
         body += `Версия приложения: ${appVersion}\n`;
         body += `Операционная система: ${osPlatform}\n`;
         body += `Архитектура: ${osArch}\n`;
-        // Можно добавить язык системы, дату и т.д.
 
-        // Кодируем для URL
         const encodedSubject = encodeURIComponent(subject);
         const encodedBody = encodeURIComponent(body);
 
-        // Формируем mailto-ссылку
         const mailtoLink = `mailto:azoga99@gmail.com?subject=${encodedSubject}&body=${encodedBody}`;
 
-        // Открываем почтовый клиент пользователя
         await window.electronAPI.openExternalUrl(mailtoLink);
 
         feedbackStatusSpan.textContent = 'Почтовый клиент открыт.';
         feedbackStatusSpan.className = 'text-green-500 text-xs';
-        feedbackMessageTextarea.value = ''; // Очищаем поле после отправки
+        feedbackMessageTextarea.value = '';
 
-        // Через некоторое время убираем сообщение
         setTimeout(() => {
             if (feedbackStatusSpan.textContent === 'Почтовый клиент открыт.') {
                 feedbackStatusSpan.textContent = '';
@@ -541,7 +577,7 @@ btnSendFeedback.addEventListener('click', async () => {
         btnSendFeedback.disabled = false;
     }
 });
-// --- Конец логики обратной связи ---
+
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {
