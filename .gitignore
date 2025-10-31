@@ -2,3 +2,4 @@
 /node_modules
 /out
 /dist-electron-builder
+/copy-assets.js

@@ -330,6 +330,7 @@ window.electronAPI.onUpdateAvailable((event, version) => {
 window.electronAPI.onUpdateNotAvailable((event) => {
     console.log('Update not available (from main).');
     pendingUpdateVersion = null;
+    updateDownloaded = false;
     // Скрываем уведомление
     updateNotification.classList.add('hidden');
     // Обновляем статус в настройках тоже
@@ -343,22 +344,25 @@ window.electronAPI.onUpdateNotAvailable((event) => {
 window.electronAPI.onUpdateError((event, error) => {
     console.error('Update error (from main):', error);
     pendingUpdateVersion = null;
+    updateDownloaded = false;
     updateNotification.classList.add('hidden'); // Скрываем уведомление при ошибке
     // Обновляем статус в настройках тоже
     updateStatusSpan.textContent = `Ошибка обновления: ${error}`;
     btnUpdateApp.style.display = 'none';
 });
 
+let updateDownloaded = false;
+
 // --- НОВОЕ: Слушатель события, что обновление скачано ---
 window.electronAPI.onUpdateDownloaded((event, version) => {
     console.log(`Update downloaded (from main): v${version}`);
-    updateStatusSpan.textContent = `Обновление v${version} загружено. Установка...`;
-    btnUpdateApp.disabled = true;
-    btnUpdateApp.textContent = 'Установка...';
+    updateDownloaded = true; // <-- Устанавливаем флаг
+    pendingUpdateVersion = null; // <-- Сбрасываем версию, если нужно
+    updateStatusSpan.textContent = `Обновление v${version} загружено. Готово к установке.`; // <-- Обновлённый текст
+    btnUpdateApp.disabled = false; // <-- Разблокируем кнопку
+    btnUpdateApp.textContent = 'Установить обновление'; // <-- Кнопка снова позволяет установить
     updateNotification.classList.add('hidden');
-
-    // --- НОВОЕ: вызов quitAndInstall ---
-    window.electronAPI.quitAndInstall();
+    // window.electronAPI.quitAndInstall();
 });
 
 // --- НОВОЕ: Слушатель для события установки обновления ---
@@ -373,9 +377,26 @@ window.electronAPI.onUpdateInstalling((event) => {
 
 // --- Обработчик кнопки "Установить обновление" ---
 btnUpdateApp.addEventListener('click', async () => {
-    if (pendingUpdateVersion) {
+    if (updateDownloaded) {
+        // Обновление уже скачано, устанавливаем
+        console.log('Update already downloaded. Installing now.');
+        updateStatusSpan.textContent = 'Установка обновления...';
+        btnUpdateApp.disabled = true;
+        btnUpdateApp.textContent = 'Установка...';
+        try {
+            // Вызываем quitAndInstall напрямую
+            await window.electronAPI.quitAndInstall();
+        } catch (error) {
+            console.error('Error calling quitAndInstall after download:', error);
+            updateStatusSpan.textContent = `Ошибка установки: ${(error as Error).message}`;
+            btnUpdateApp.disabled = false;
+            btnUpdateApp.textContent = 'Установить обновление';
+            updateDownloaded = false; // <-- Сбрасываем флаг, если установка не удалась
+        }
+    } else if (pendingUpdateVersion) {
+        // Обновление доступно, но не скачано. Начинаем скачивание.
         console.log(`User clicked 'Install Update' for version ${pendingUpdateVersion}`);
-        updateNotification.classList.add('hidden'); // Скрываем уведомление
+        updateNotification.classList.add('hidden');
 
         // Переключаемся на вкладку настроек, чтобы пользователь видел прогресс
         showMode('settings');
@@ -394,10 +415,8 @@ btnUpdateApp.addEventListener('click', async () => {
 
             const downloadSuccess = await window.electronAPI.downloadUpdate();
             if (downloadSuccess) {
-                // autoUpdater.on('update-downloaded', ...) в main.ts сам запустит установку
-                updateStatusSpan.textContent = 'Обновление загружено. Подготовка к установке...';
-                // Кнопка "Установить" в настройках будет заменена на "Установка..." в main.ts
-                // и затем вызовется autoUpdater.quitAndInstall()
+                // renderer ждёт, что main.ts вызовет 'update-downloaded'
+                // и btnUpdateApp.textContent изменится на 'Установить обновление' в 'onUpdateDownloaded'
             } else {
                 throw new Error('Не удалось загрузить обновление.');
             }
@@ -411,10 +430,8 @@ btnUpdateApp.addEventListener('click', async () => {
         // <-- ИЗМЕНЕНО: Не вызываем quitAndInstall, если нет pendingUpdateVersion -->
         console.log('No pending update to install. User must first receive an update notification.');
         updateStatusSpan.textContent = 'Нет доступного обновления для установки.';
-        // Можно оставить кнопку неактивной или вернуть её в исходное состояние
-        btnUpdateApp.disabled = false; // или false, если хотите, чтобы пользователь мог снова проверить
+        btnUpdateApp.disabled = false;
         btnUpdateApp.textContent = 'Установить обновление';
-        // ВАЖНО: Не вызываем quitAndInstall!
     }
 });
 
