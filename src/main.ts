@@ -389,9 +389,8 @@ const createWindow = () => {
     // --- Логика обновления ---
     // <-- НОВОЕ: Проверяем обновления после загрузки окна -->
     mainWindow.webContents.once('did-finish-load', () => {
-        console.log('Main window loaded. Initiating auto-update check.');
-        // <-- НОВОЕ: Отправляем IPC-вызов в renderer, чтобы он сам запустил проверку -->
-        mainWindow?.webContents.send('app-ready-for-update-check');
+      console.log('Main window loaded. Initiating auto-update check.');
+      autoUpdater.checkForUpdates();
     });
 };
 

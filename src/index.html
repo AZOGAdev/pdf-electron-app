@@ -122,6 +122,7 @@
         .main-content {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 1.5rem;
             background-color: var(--main-bg);
         }
@@ -143,35 +144,63 @@
             width: 100%;
         }
 
+        .folder-group {
+            margin-bottom: 1.5rem;
+            padding: 0.75rem; /* <-- НОВОЕ: добавляем отступы внутри */
+            background-color: var(--status-section-bg);
+            border: 1px solid var(--status-section-border);
+            border-radius: 0.375rem;
+            width: 100%; /* <-- Оставляем, чтобы группа занимала всю ширину */
+        }
+
+        .folder-group:last-child {
+            margin-bottom: 0; /* <-- Убираем отступ у последней группы */
+        }
+
         .folder-row {
             display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 0.75rem;
+            flex-direction: column; /* <-- Лейбл и контейнер теперь в столбце */
+            align-items: flex-start; /* <-- Выравнивание по левому краю */
+            gap: 0.5rem; /* <-- Отступ между лейблом и контейнером */
             margin-bottom: 1rem;
             width: 100%;
         }
 
+        /* Контейнер для инпута и кнопки */
+        .folder-input-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            /* width: 100%; */ /* <-- УБРАТЬ эту строку */
+            flex: 1; /* <-- НОВОЕ: позволяет контейнеру занять всё доступное пространство */
+        }
+
+        /* Лейбл над инпутом */
         .folder-label {
             font-weight: 500;
             color: var(--text-color);
-            min-width: 150px;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
+            display: block;
+            margin-bottom: 0.25rem; /* <-- Небольшой отступ от лейбла к инпуту */
         }
 
+        /* Инпут, который должен растягиваться */
         .folder-input {
-            flex: 1;
-            min-width: 200px;
+            flex: 1; /* <-- Занимает всё доступное место */
+            min-width: 0; /* <-- Позволяет сжиматься */
+            max-width: 100%; /* <-- Не выходит за границы */
             padding: 0.5rem;
             background-color: var(--folder-input-bg);
             border: 1px solid var(--folder-input-border);
             border-radius: 0.375rem;
             color: var(--folder-input-text);
+            font-size: 0.875rem;
+            box-sizing: border-box; /* <-- Учитывает padding в ширине */
         }
 
+        /* Кнопка "Выбрать" */
         .btn {
+            /* Убедитесь, что кнопка не сжимается */
+            flex-shrink: 0; /* <-- Ключевое свойство */
             padding: 0.5rem 1rem;
             border-radius: 0.375rem;
             font-weight: 500;
@@ -221,8 +250,8 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            margin-left: 150px;
-            margin-bottom: 1rem;
+            margin-top: 0.25rem;
+            margin-bottom: 0;
             width: 100%;
         }
 
@@ -642,9 +671,13 @@
             transition: opacity 0.3s ease, transform 0.3s ease; /* Плавное появление/исчезновение */
         }
 
+        .update-notification.hidden {
+            display: none; /* <-- Полностью убирает элемент из потока документа */
+        }
+
         .update-notification:not(.hidden) {
             opacity: 1;
-            transform: translateY(0); /* Конечное положение */
+            transform: translateY(0);
         }
 
         [data-theme="dark"] .update-notification {
@@ -732,7 +765,7 @@
                 <i data-lucide="settings" class="w-4 h-4"></i>
                 <span>Настройки</span>
             </button>
-            <div class="text-xs text-gray-500 text-center mt-1">version 1.2.3</div>
+            <div class="text-xs text-gray-500 text-center mt-1">version 1.2.8</div>
         </div>
     </div>
 
@@ -744,42 +777,45 @@
             </div>
 
             <div class="folder-section">
-                <div class="folder-row">
-                    <label class="folder-label">
-                        Папка с ЗЭПБ
-                    </label>
-                    <input type="text" id="label-main" value="Не выбрана" readonly class="folder-input">
-                    <button id="btn-main" class="btn btn-primary">
-                        Выбрать
-                    </button>
-                </div>
-                <div class="checkbox-container">
-                    <input type="checkbox" id="chk-main-recursive" checked class="checkbox-input">
-                    <label for="chk-main-recursive" class="checkbox-label">искать в подпапках</label>
-                </div>
-
-                <div class="folder-row">
-                    <label class="folder-label">
-                        Папка с уведомлениями
-                    </label>
-                    <input type="text" id="label-insert" value="Не выбрана" readonly class="folder-input">
-                    <button id="btn-insert" class="btn btn-primary">
-                        Выбрать
-                    </button>
-                </div>
-                <div class="checkbox-container">
-                    <input type="checkbox" id="chk-insert-recursive" checked class="checkbox-input">
-                    <label for="chk-insert-recursive" class="checkbox-label">искать в подпапках</label>
+                <!-- Папка с ЗЭПБ -->
+                <div class="folder-group">
+                    <label class="folder-label">Папка с ЗЭПБ</label>
+                    <div class="folder-input-container">
+                        <input type="text" id="label-main" value="Не выбрана" readonly class="folder-input">
+                        <button id="btn-main" class="btn btn-primary">
+                            Выбрать
+                        </button>
+                    </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="chk-main-recursive" checked class="checkbox-input">
+                        <label for="chk-main-recursive" class="checkbox-label">искать в подпапках</label>
+                    </div>
                 </div>
 
-                <div class="folder-row">
-                    <label class="folder-label">
-                        Папка с результатами
-                    </label>
-                    <input type="text" id="label-output" value="Не выбрана" readonly class="folder-input">
-                    <button id="btn-output" class="btn btn-primary">
-                        Выбрать
-                    </button>
+                <!-- Папка с уведомлениями -->
+                <div class="folder-group">
+                    <label class="folder-label">Папка с уведомлениями</label>
+                    <div class="folder-input-container">
+                        <input type="text" id="label-insert" value="Не выбрана" readonly class="folder-input">
+                        <button id="btn-insert" class="btn btn-primary">
+                            Выбрать
+                        </button>
+                    </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="chk-insert-recursive" checked class="checkbox-input">
+                        <label for="chk-insert-recursive" class="checkbox-label">искать в подпапках</label>
+                    </div>
+                </div>
+
+                <!-- Папка с результатами -->
+                <div class="folder-group">
+                    <label class="folder-label">Папка с результатами</label>
+                    <div class="folder-input-container">
+                        <input type="text" id="label-output" value="Не выбрана" readonly class="folder-input">
+                        <button id="btn-output" class="btn btn-primary">
+                            Выбрать
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -887,13 +923,15 @@
 
     <!-- Всплывающее уведомление об обновлении (по умолчанию скрыто) -->
     <div id="update-notification" class="update-notification hidden">
-        <div class="update-notification-content">
-            <p id="update-notification-text" class="update-notification-text">Доступна новая версия. Проверьте наличие обновлений в настройках приложения.</p>
-            <div class="update-notification-actions">
-                <button id="btn-dismiss-popup" class="btn btn-outline btn-sm">Закрыть</button>
-            </div>
-        </div>
+  <div class="update-notification-content">
+    <p id="update-notification-text" class="update-notification-text">Доступна новая версия. Проверьте наличие обновлений в настройках приложения.</p>
+    <div class="update-notification-actions">
+      <!-- ДОБАВЛЕНО: кнопка "Обновить" -->
+      <button id="btn-update-popup" class="btn btn-primary btn-sm">Обновить</button>
+      <button id="btn-dismiss-popup" class="btn btn-outline btn-sm">Закрыть</button>
     </div>
+  </div>
+</div>
 
     <script>
         lucide.createIcons();

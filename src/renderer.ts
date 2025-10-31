@@ -256,15 +256,11 @@ const loadTheme = () => {
 // --- Переключение режимов ---
 const showMode = (modeId: string) => {
     mode1Content.style.display = 'none';
-    mode2Content.style.display = 'none'; // Добавлено
     settingsContent.style.display = 'none';
 
     switch (modeId) {
         case 'mode1':
             mode1Content.style.display = 'block';
-            break;
-        case 'mode2': // Добавлено
-            mode2Content.style.display = 'block';
             break;
         case 'settings':
             settingsContent.style.display = 'block';
@@ -274,13 +270,10 @@ const showMode = (modeId: string) => {
     }
 
     navMode1.classList.remove('active');
-    navMode2?.classList.remove('active'); // Добавлено
     navSettings.classList.remove('active');
 
     if (modeId === 'mode1') {
         navMode1.classList.add('active');
-    } else if (modeId === 'mode2') { // Добавлено
-        navMode2?.classList.add('active');
     } else if (modeId === 'settings') {
         navSettings.classList.add('active');
     }
@@ -359,12 +352,13 @@ window.electronAPI.onUpdateError((event, error) => {
 // --- НОВОЕ: Слушатель события, что обновление скачано ---
 window.electronAPI.onUpdateDownloaded((event, version) => {
     console.log(`Update downloaded (from main): v${version}`);
-    // Обновляем статус в настройках
-    updateStatusSpan.textContent = `Обновление v${version} загружено. Готово к установке.`;
-    btnUpdateApp.textContent = 'Установить обновление'; // Текст кнопки "Установить"
-    btnUpdateApp.disabled = false; // Разблокируем кнопку
-    // Скрываем уведомление, если оно было показано
+    updateStatusSpan.textContent = `Обновление v${version} загружено. Установка...`;
+    btnUpdateApp.disabled = true;
+    btnUpdateApp.textContent = 'Установка...';
     updateNotification.classList.add('hidden');
+
+    // --- НОВОЕ: вызов quitAndInstall ---
+    window.electronAPI.quitAndInstall();
 });
 
 // --- НОВОЕ: Слушатель для события установки обновления ---
@@ -414,21 +408,13 @@ btnUpdateApp.addEventListener('click', async () => {
             btnUpdateApp.textContent = 'Установить обновление';
         }
     } else {
-        console.log('No pending update to install.');
-        // Если кнопка была нажата, но нет pendingUpdateVersion, возможно, обновление уже готово к установке
-        // В этом случае просто вызываем quitAndInstall
-        try {
-            console.log('No pending version, calling quitAndInstall directly.');
-            updateStatusSpan.textContent = 'Установка обновления...';
-            btnUpdateApp.disabled = true;
-            btnUpdateApp.textContent = 'Установка...';
-            await window.electronAPI.quitAndInstall();
-        } catch (error) {
-            console.error('Error calling quitAndInstall:', error);
-            updateStatusSpan.textContent = `Ошибка установки: ${(error as Error).message}`;
-            btnUpdateApp.disabled = false;
-            btnUpdateApp.textContent = 'Установить обновление';
-        }
+        // <-- ИЗМЕНЕНО: Не вызываем quitAndInstall, если нет pendingUpdateVersion -->
+        console.log('No pending update to install. User must first receive an update notification.');
+        updateStatusSpan.textContent = 'Нет доступного обновления для установки.';
+        // Можно оставить кнопку неактивной или вернуть её в исходное состояние
+        btnUpdateApp.disabled = false; // или false, если хотите, чтобы пользователь мог снова проверить
+        btnUpdateApp.textContent = 'Установить обновление';
+        // ВАЖНО: Не вызываем quitAndInstall!
     }
 });
 
@@ -437,11 +423,6 @@ btnUpdatePopup.addEventListener('click', () => {
     console.log('User clicked "Update" in notification.');
     updateNotification.classList.add('hidden'); // Скрыть уведомление
     showMode('settings'); // Перейти в настройки
-    // Опционально: прокрутить к секции обновлений
-    const updateSection = document.querySelector('.update-controls');
-    if (updateSection) {
-        updateSection.scrollIntoView({ behavior: 'smooth' });
-    }
 });
 
 btnDismissPopup.addEventListener('click', () => {
