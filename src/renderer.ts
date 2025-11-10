@@ -10,8 +10,6 @@ let lastSelectedMainFolder: string | null = null;
 let lastSelectedInsertFolder: string | null = null;
 let lastSelectedOutputFolder: string | null = null;
 
-const baseName = window.electronAPI.basename(notifPath);
-
 // --- DOM Elements ---
 const navMode1 = document.getElementById('nav-mode1') as HTMLButtonElement;
 const navMode2 = document.getElementById('nav-mode-compress') as HTMLButtonElement; // Предположим, это Mode2
@@ -64,7 +62,6 @@ const updateNotificationText = document.getElementById('update-notification-text
 const btnUpdatePopup = document.getElementById('btn-update-popup') as HTMLButtonElement; // Кнопка "Обновить" в уведомлении
 const btnDismissPopup = document.getElementById('btn-dismiss-popup') as HTMLButtonElement; // Кнопка "Закрыть" в уведомлении
 
-
 // --- Функции ---
 const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -114,16 +111,19 @@ const loadSettings = async () => {
         const settings = await window.electronAPI.loadSettings();
         if (settings.mainFolder) {
             mainFolder = settings.mainFolder;
+            lastSelectedMainFolder = settings.mainFolder;
             updateFolderLabel(labelMain, mainFolder);
             zepbDict = await window.electronAPI.buildDict('zepb', mainFolder, settings.mainRecursive);
         }
         if (settings.insertFolder) {
             insertFolder = settings.insertFolder;
+            lastSelectedInsertFolder = settings.insertFolder;
             updateFolderLabel(labelInsert, insertFolder);
             insertDict = await window.electronAPI.buildDict('insert', insertFolder, settings.insertRecursive);
         }
         if (settings.outputFolder) {
             outputFolder = settings.outputFolder;
+            lastSelectedOutputFolder = settings.outputFolder;
             updateFolderLabel(labelOutput, outputFolder);
             btnOpenOutput.disabled = false;
         }
@@ -147,6 +147,9 @@ const saveSettings = async () => {
         outputFolder,
         mainRecursive: chkMainRecursive.checked,
         insertRecursive: chkInsertRecursive.checked,
+        lastSelectedMainFolder,
+        lastSelectedInsertFolder,
+        lastSelectedOutputFolder,
     };
     try {
         const success = await window.electronAPI.saveSettings(settings);
@@ -253,7 +256,8 @@ const applyTheme = (isDark: boolean) => {
 
 // --- Вспомогательная функция для выбора папки с запоминанием ---
 const selectFolder = async (lastSelected: string | null) => {
-    const folder = await window.electronAPI.selectFolder();
+    const folder = await window.electronAPI.selectFolder(lastSelected ?? undefined);
+
     return folder;
 };
 
@@ -549,6 +553,8 @@ btnRun.addEventListener('click', async () => {
             const notifPath = insertDict[notifCode];
             const matchingZepbPath = zepbDict[notifCode];
 
+            const baseName = window.electronAPI.basename(notifPath);
+
             if (!matchingZepbPath) {
                 log(`⚠️ Не найден ЗЭПБ для уведомления: ${baseName} (${notifCode})`, 'warning');
                 skipped++;
@@ -605,7 +611,7 @@ btnOpenOutput.addEventListener('click', async () => {
             alert(`Ошибка открытия папки: ${(error as Error).message}`);
         }
     } else {
-        alert('Папка результата не выбрана.');
+        showPopup('⚠️ Папка для итоговых файлов не выбрана!');
     }
 });
 
@@ -742,7 +748,58 @@ btnCompressRun.addEventListener('click', async () => {
     }
 });
 
+// Универсальный popup для уведомлений внутри приложения
+function showPopup(message: string, timeout = 8000) {
+    let popup = document.getElementById('app-popup') as HTMLDivElement | null;
 
+    if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'app-popup';
+        popup.className = 'app-popup hidden';
+        // Базовые стили для позиционирования
+        popup.style.position = 'fixed';
+        popup.style.bottom = '20px';
+        popup.style.right = '20px';
+        popup.style.padding = '12px 20px';
+        popup.style.borderRadius = '8px';
+        popup.style.boxShadow = '0 4px 10px rgba(0,0,0,0.2)';
+        popup.style.zIndex = '9999';
+        popup.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        popup.style.opacity = '0';
+        popup.style.transform = 'translateY(20px)';
+        document.body.appendChild(popup);
+    }
+
+    popup.textContent = message;
+
+    // Берем цвета из CSS-переменных, которые задаёт applyTheme
+    const computedStyle = getComputedStyle(document.documentElement);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    popup.style.backgroundColor = isDark 
+        ? computedStyle.getPropertyValue('--notification-bg-dark') 
+        : computedStyle.getPropertyValue('--notification-bg');
+    popup.style.color = isDark 
+        ? computedStyle.getPropertyValue('--notification-text-dark') 
+        : computedStyle.getPropertyValue('--notification-text');
+    popup.style.border = `1px solid ${isDark 
+        ? computedStyle.getPropertyValue('--notification-border-dark') 
+        : computedStyle.getPropertyValue('--notification-border')}`;
+
+    // Показать с анимацией
+    popup.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        popup!.style.opacity = '1';
+        popup!.style.transform = 'translateY(0)';
+    });
+
+    setTimeout(() => {
+        if (popup) {
+            popup.style.opacity = '0';
+            popup.style.transform = 'translateY(20px)';
+            setTimeout(() => popup?.classList.add('hidden'), 300); // скрываем после анимации
+        }
+    }, timeout);
+}
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {

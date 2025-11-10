@@ -209,10 +209,10 @@ const mergePDFs = async (
 };
 
 // --- IPC Handlers ---
-ipcMain.handle('select-folder', async () => {
+ipcMain.handle('select-folder', async (event, defaultPath?: string) => {
     const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow()!, {
         properties: ['openDirectory'],
-        defaultPath: lastSelectedFolder || app.getPath('home')
+        defaultPath: defaultPath && fs.existsSync(defaultPath) ? defaultPath : undefined,
     });
 
     if (!result.canceled && result.filePaths.length > 0) {

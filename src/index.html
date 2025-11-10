@@ -712,6 +712,33 @@
             padding: 0.25rem 0.5rem;
             font-size: 0.75rem;
         }
+
+        .app-popup {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #323232;
+        color: #fff;
+        padding: 12px 18px;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        font-size: 14px;
+        opacity: 0;
+        transform: translateY(15px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        z-index: 9999;
+        }
+
+        .app-popup:not(.hidden) {
+        opacity: 1;
+        transform: translateY(0);
+        }
+
+        .app-popup.hidden {
+        opacity: 0;
+        pointer-events: none;
+        }
+
         
     </style>
 </head>

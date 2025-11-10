@@ -1,11 +1,13 @@
 // src/preload.ts
 import { contextBridge, ipcRenderer } from 'electron';
-import path from 'path';
 
 // --- НОВЫЕ методы для обновления ---
 contextBridge.exposeInMainWorld('electronAPI', {
-    selectFolder: () => ipcRenderer.invoke('select-folder'),
-    basename: (fullPath: string) => path.basename(fullPath),
+    selectFolder: (defaultPath?: string) => ipcRenderer.invoke('select-folder', defaultPath),
+    basename: (fullPath: string) => {
+    // безопасный аналог path.basename
+    return fullPath.replace(/\\/g, '/').split('/').pop() || fullPath;
+    },
     loadSettings: () => ipcRenderer.invoke('load-settings'),
     getAppInfo: () => ipcRenderer.invoke('get-app-info'),
     openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),

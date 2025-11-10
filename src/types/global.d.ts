@@ -4,7 +4,7 @@
 declare global {
   interface Window {
     electronAPI: {
-      selectFolder: () => Promise<string | null>;
+      selectFolder: (defaultPath?: string) => Promise<string | null>;
       loadSettings: () => Promise<any>;
       basename: (fullPath: string) => string;
       saveSettings: (settings: any) => Promise<boolean>;
