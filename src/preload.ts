@@ -1,9 +1,11 @@
 // src/preload.ts
 import { contextBridge, ipcRenderer } from 'electron';
+import path from 'path';
 
 // --- НОВЫЕ методы для обновления ---
 contextBridge.exposeInMainWorld('electronAPI', {
     selectFolder: () => ipcRenderer.invoke('select-folder'),
+    basename: (fullPath: string) => path.basename(fullPath),
     loadSettings: () => ipcRenderer.invoke('load-settings'),
     getAppInfo: () => ipcRenderer.invoke('get-app-info'),
     openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
@@ -47,4 +49,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('app-ready-for-update-check', callback);
         return () => ipcRenderer.removeListener('app-ready-for-update-check', callback);
     },
+    compressPDFs: (options: { inputFolder: string, outputFolder: string }) =>
+    ipcRenderer.invoke('compress-pdfs', options),
 });

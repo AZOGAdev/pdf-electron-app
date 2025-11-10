@@ -6,6 +6,7 @@ declare global {
     electronAPI: {
       selectFolder: () => Promise<string | null>;
       loadSettings: () => Promise<any>;
+      basename: (fullPath: string) => string;
       saveSettings: (settings: any) => Promise<boolean>;
       mergePDFs: (options: any) => Promise<any>;
       openFolder: (folderPath: string) => Promise<boolean>;
@@ -22,18 +23,22 @@ declare global {
       onAppReadyForUpdateCheck: (callback: () => void) => () => void;
       // Слушатели событий обновления
       getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
-      // --- НОВОЕ: Слушатели для событий обновления ---
-      onUpdateAvailable: (callback: (event: any, version: string) => void) => () => void;
-      onUpdateNotAvailable: (callback: (event: any) => void) => () => void;
-      onUpdateError: (callback: (event: any, error: string) => void) => () => void;
-      onUpdateDownloadProgress: (callback: (event: any, percent: number) => void) => () => void;
-      onUpdateDownloaded: (callback: (event: any, version: string) => void) => () => void;
-      onUpdateInstalling: (callback: (event: any) => void) => () => void; // <-- НОВОЕ
       // ... (все остальные методы) ...
       openExternalUrl: (url: string) => Promise<void>;
-    };
+      compressPDFs: (options: { inputFolder: string; outputFolder: string }) => Promise<{ processed: number; total: number; log: string[] }>;
+    } & UpdateEventCallbacks;
   }
 }
+
+type UpdateEventCallbacks = {
+  onUpdateAvailable: (callback: (event: any, version: string) => void) => () => void;
+  onUpdateNotAvailable: (callback: (event: any) => void) => () => void;
+  onUpdateError: (callback: (event: any, error: string) => void) => () => void;
+  onUpdateDownloadProgress: (callback: (event: any, percent: number) => void) => () => void;
+  onUpdateDownloaded: (callback: (event: any, version: string) => void) => () => void;
+  onUpdateInstalling: (callback: (event: any) => void) => () => void;
+};
+
 
 // Пустой export делает файл модулем
 export {};

@@ -7,48 +7,60 @@ import { promises as fsPromises } from 'fs';
 import { Dirent } from 'fs';
 import { autoUpdater } from 'electron-updater';
 
-// --- Глобальный флаг для отслеживания программного закрытия приложения ---
+// --- Глобальные переменные ---
 let isQuitting = false;
-let mainWindow: BrowserWindow | null = null; // Объявляем mainWindow здесь для доступности во всех обработчиках
-let updateDownloaded = false; // <-- НОВОЕ: Флаг для отслеживания состояния скачивания
+let mainWindow: BrowserWindow | null = null;
+let updateDownloaded = false;
+let lastSelectedFolder: string | null = null; // <-- Запоминаем последнюю папку
 
-// --- Функции для работы с PDF (на TypeScript/JavaScript) ---
+// --- Вспомогательные функции для PDF ---
 
-const extractNotificationCode = (filename: string): string | null => {
-    const prefixes = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
-    const prefixPattern = prefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    const pattern = new RegExp(`(${prefixPattern})-\\d+(\\.\\d+)?`, 'i');
-    const match = filename.match(pattern);
-    if (match) {
-        return match[0].toUpperCase();
-    }
-    const numberMatch = filename.match(/\b\d{3,}\b/);
-    if (numberMatch) {
-        return numberMatch[0];
-    }
-    return null;
+// ✅ Извлекает код уведомления (учитывает имя файла и имя папки)
+const extractNotificationCode = (filePath: string): string | null => {
+  const prefixes = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
+  const prefixPattern = prefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const pattern = new RegExp(`(${prefixPattern})-\\d+(?:\\.\\d+)?`, 'i');
+
+  const filename = path.basename(filePath);
+  const foldername = path.basename(path.dirname(filePath));
+
+  // 1. Пробуем найти конструкцию прямо в имени файла
+  let match = filename.match(pattern);
+  if (match) return match[0].toUpperCase();
+
+  // 2. Если нет — пробуем использовать имя папки как префикс
+  const folderPrefix = prefixes.find(p => foldername.toUpperCase().includes(p));
+  if (folderPrefix) {
+    const numMatch = filename.match(/\d+(?:\.\d+)?/);
+    if (numMatch) return `${folderPrefix}-${numMatch[0]}`.toUpperCase();
+  }
+
+  return null;
 };
 
-const extractZepbNumber = (filename: string): string | null => {
-    const pattern = /з.?э.?п.?б[^\d]*(\d+)/i;
-    const match = filename.match(pattern);
-    if (match) {
-        return match[1];
-    }
-    return null;
+// ✅ Извлекает код из имени ЗЭПБ
+const extractZepbCode = (filename: string): string | null => {
+  const prefixes = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
+  const prefixPattern = prefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const pattern = new RegExp(`(${prefixPattern})-\\d+(?:\\.\\d+)?`, 'i');
+  const match = filename.match(pattern);
+  return match ? match[0].toUpperCase() : null;
 };
 
+// Проверка, был ли файл уже объединён
 const isAlreadyProcessed = (filename: string): boolean => {
-    const patterns = [
-        /\(с увед\)/i, /\(с уведомл\)/i, /с увед/i,
-        /\(with notification\)/i, /объединен/i, /processed/i
-    ];
-    const filenameLower = filename.toLowerCase();
-    return patterns.some(p => p.test(filenameLower));
+  const patterns = [
+    /\(с увед\)/i, /\(с уведомл\)/i, /с увед/i,
+    /\(with notification\)/i, /объединен/i, /processed/i
+  ];
+  const filenameLower = filename.toLowerCase();
+  return patterns.some(p => p.test(filenameLower));
 };
 
+// --- Строим словари уведомлений и ЗЭПБ ---
 const buildInsertDict = async (rootFolder: string, recursive: boolean): Promise<Record<string, string>> => {
     const insertDict: Record<string, string> = {};
+    const skipped: string[] = [];
 
     const scanDir = async (dir: string) => {
         const items = await fsPromises.readdir(dir, { withFileTypes: true });
@@ -58,8 +70,11 @@ const buildInsertDict = async (rootFolder: string, recursive: boolean): Promise<
                 await scanDir(fullPath);
             } else if (item.isFile() && fullPath.toLowerCase().endsWith('.pdf')) {
                 const fileName = path.basename(fullPath);
-                if (isAlreadyProcessed(fileName)) continue;
-                const code = extractNotificationCode(fileName);
+                if (isAlreadyProcessed(fileName)) {
+                    skipped.push(fileName);
+                    continue;
+                }
+                const code = extractNotificationCode(fullPath);
                 if (code && !insertDict[code]) {
                     insertDict[code] = fullPath;
                 }
@@ -68,11 +83,17 @@ const buildInsertDict = async (rootFolder: string, recursive: boolean): Promise<
     };
 
     await scanDir(rootFolder);
+
+    if (skipped.length) {
+        console.log(`⏭️ Пропущенные уведомления: ${skipped.join(', ')}`);
+    }
+
     return insertDict;
 };
 
 const buildZepbDict = async (rootFolder: string, recursive: boolean): Promise<Record<string, string>> => {
     const zepbDict: Record<string, string> = {};
+    const skipped: string[] = [];
 
     const scanDir = async (dir: string) => {
         const items = await fsPromises.readdir(dir, { withFileTypes: true });
@@ -82,155 +103,155 @@ const buildZepbDict = async (rootFolder: string, recursive: boolean): Promise<Re
                 await scanDir(fullPath);
             } else if (item.isFile() && fullPath.toLowerCase().endsWith('.pdf') && fullPath.toLowerCase().includes('зэпб')) {
                 const fileName = path.basename(fullPath);
-                if (isAlreadyProcessed(fileName)) continue;
-                const number = extractZepbNumber(fileName);
-                if (number && !zepbDict[number]) {
-                    zepbDict[number] = fullPath;
+                if (isAlreadyProcessed(fileName)) {
+                    skipped.push(fileName);
+                    continue;
+                }
+                const code = extractZepbCode(fileName);
+                if (code && !zepbDict[code]) {
+                    zepbDict[code] = fullPath;
                 }
             }
         }
     };
 
     await scanDir(rootFolder);
+
+    if (skipped.length) {
+        console.log(`⏭️ Пропущенные ЗЭПБ: ${skipped.join(', ')}`);
+    }
+
     return zepbDict;
 };
 
+// --- Основное объединение PDF ---
 const mergePDFs = async (
-    mainFolder: string,
-    insertFolder: string,
-    outputFolder: string,
-    recursiveMain: boolean,
-    recursiveInsert: boolean
+  mainFolder: string,
+  insertFolder: string,
+  outputFolder: string,
+  recursiveMain: boolean,
+  recursiveInsert: boolean
 ): Promise<{ processed: number; skipped: number; errors: string[]; log: string[]; total: number }> => {
-    const insertDict = await buildInsertDict(insertFolder, recursiveInsert);
-    const zepbDict = await buildZepbDict(mainFolder, recursiveMain);
 
-    const results = { processed: 0, skipped: 0, errors: [] as string[], log: [] as string[], total: 0 };
-    const total = Object.keys(insertDict).length;
-    results.total = total;
+  const insertDict = await buildInsertDict(insertFolder, recursiveInsert);
+  const zepbDict = await buildZepbDict(mainFolder, recursiveMain);
 
-    for (const [notifCode, notifPath] of Object.entries(insertDict)) {
-        const notifNumMatch = notifCode.match(/\d+/);
-        const notifNum = notifNumMatch ? notifNumMatch[0] : null;
-        let matchingZepbPath: string | undefined = undefined;
-        let matchingZepbName: string = '';
+  const results = { processed: 0, skipped: 0, errors: [] as string[], log: [] as string[], total: 0 };
+  results.total = Object.keys(insertDict).length;
 
-        for (const [zepbNum, zepbPath] of Object.entries(zepbDict)) {
-            const zepbFileName = path.basename(zepbPath);
-            if (notifCode.toUpperCase().includes(zepbNum) || zepbFileName.toUpperCase().includes(notifCode)) {
-                matchingZepbPath = zepbPath;
-                matchingZepbName = zepbFileName;
-                break;
-            }
-        }
+  for (const [notifCode, notifPath] of Object.entries(insertDict)) {
+    let matchingZepbPath: string | undefined = undefined;
+    let matchingZepbName: string = '';
 
-        if (!matchingZepbPath && notifNum && zepbDict[notifNum]) {
-            matchingZepbPath = zepbDict[notifNum];
-            matchingZepbName = path.basename(matchingZepbPath);
-        }
-
-        if (!matchingZepbPath) {
-            const msg = `⚠️ Не найден ЗЭПБ для уведомления: ${path.basename(notifPath)}`;
-            results.log.push(msg);
-            results.skipped += 1;
-            continue;
-        }
-
-        try {
-            if (isAlreadyProcessed(matchingZepbName)) {
-                const msg = `⏭️ Пропущен уже обработанный ЗЭПБ: ${matchingZepbName}`;
-                results.log.push(msg);
-                results.skipped += 1;
-                continue;
-            }
-
-            const notifPdfBytes = await fs.readFile(notifPath);
-            const notifPdfDoc = await PDFDocument.load(notifPdfBytes);
-
-            const zepbPdfBytes = await fs.readFile(matchingZepbPath);
-            const zepbPdfDoc = await PDFDocument.load(zepbPdfBytes);
-
-            const mergedPdfDoc = await PDFDocument.create();
-
-            const notifPages = await mergedPdfDoc.copyPages(notifPdfDoc, notifPdfDoc.getPageIndices());
-            for (const page of notifPages) {
-                mergedPdfDoc.addPage(page);
-            }
-
-            const zepbPages = await mergedPdfDoc.copyPages(zepbPdfDoc, zepbPdfDoc.getPageIndices());
-            for (const page of zepbPages) {
-                mergedPdfDoc.addPage(page);
-            }
-
-            const baseName = path.basename(matchingZepbPath, '.pdf');
-            const cleanBaseName = baseName
-                .replace(/\s*\(с увед.*?\)\s*$/i, '')
-                .replace(/\s*с увед.*?$/i, '');
-            const outputFilename = `${cleanBaseName} (с увед).pdf`;
-            const outputPath = path.join(outputFolder, outputFilename);
-
-            const mergedPdfBytes = await mergedPdfDoc.save();
-            await fs.writeFile(outputPath, mergedPdfBytes);
-
-            const msg = `✅ Объединено: ${outputFilename}`;
-            results.log.push(msg);
-            results.processed += 1;
-
-        } catch (err) {
-            const errorMsg = `❌ Ошибка при обработке ${notifCode}: ${(err as Error).message}`;
-            results.log.push(errorMsg);
-            results.errors.push(errorMsg);
-            results.skipped += 1;
-            console.error(errorMsg);
-        }
+    for (const [zepbCode, zepbPath] of Object.entries(zepbDict)) {
+      if (zepbCode === notifCode) {
+        matchingZepbPath = zepbPath;
+        matchingZepbName = path.basename(zepbPath);
+        break;
+      }
     }
 
-    return results;
+    if (!matchingZepbPath) {
+      const msg = `⚠️ Не найден ЗЭПБ для уведомления: ${path.basename(notifPath)} (${notifCode})`;
+      results.log.push(msg);
+      results.skipped += 1;
+      continue;
+    }
+
+    try {
+      if (isAlreadyProcessed(matchingZepbName)) {
+        const msg = `⏭️ Пропущен уже обработанный ЗЭПБ: ${matchingZepbName}`;
+        results.log.push(msg);
+        results.skipped += 1;
+        continue;
+      }
+
+      // Загружаем и объединяем PDF
+      const notifPdfBytes = await fs.readFile(notifPath);
+      const notifPdfDoc = await PDFDocument.load(notifPdfBytes);
+
+      const zepbPdfBytes = await fs.readFile(matchingZepbPath);
+      const zepbPdfDoc = await PDFDocument.load(zepbPdfBytes);
+
+      const mergedPdfDoc = await PDFDocument.create();
+
+      // Сначала уведомление, потом ЗЭПБ
+      const notifPages = await mergedPdfDoc.copyPages(notifPdfDoc, notifPdfDoc.getPageIndices());
+      notifPages.forEach(page => mergedPdfDoc.addPage(page));
+
+      const zepbPages = await mergedPdfDoc.copyPages(zepbPdfDoc, zepbPdfDoc.getPageIndices());
+      zepbPages.forEach(page => mergedPdfDoc.addPage(page));
+
+      const baseName = path.basename(matchingZepbPath, '.pdf');
+      const cleanBaseName = baseName
+        .replace(/\s*\(с увед.*?\)\s*$/i, '')
+        .replace(/\s*с увед.*?$/i, '');
+      const outputFilename = `${cleanBaseName} (с увед).pdf`;
+      const outputPath = path.join(outputFolder, outputFilename);
+
+      const mergedPdfBytes = await mergedPdfDoc.save();
+      await fs.writeFile(outputPath, mergedPdfBytes);
+
+      const msg = `✅ Объединено: ${outputFilename}`;
+      results.log.push(msg);
+      results.processed += 1;
+
+    } catch (err) {
+      const errorMsg = `❌ Ошибка при обработке ${notifCode}: ${(err as Error).message}`;
+      results.log.push(errorMsg);
+      results.errors.push(errorMsg);
+      results.skipped += 1;
+      console.error(errorMsg);
+    }
+  }
+
+  return results;
 };
 
 // --- IPC Handlers ---
 ipcMain.handle('select-folder', async () => {
     const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow()!, {
-        properties: ['openDirectory']
+        properties: ['openDirectory'],
+        defaultPath: lastSelectedFolder || app.getPath('home')
     });
-    if (!result.canceled) {
-        return result.filePaths[0];
+
+    if (!result.canceled && result.filePaths.length > 0) {
+        lastSelectedFolder = result.filePaths[0];
+        return lastSelectedFolder;
     }
     return null;
 });
 
 ipcMain.handle('load-settings', async () => {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-    try {
-        if (await fs.pathExists(settingsPath)) {
-            const settings = await fs.readJson(settingsPath);
-            return settings;
-        }
-    } catch (error) {
-        console.error('Error loading settings:', error);
+  const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+  try {
+    if (await fs.pathExists(settingsPath)) {
+      return await fs.readJson(settingsPath);
     }
-    return {};
+  } catch (error) {
+    console.error('Error loading settings:', error);
+  }
+  return {};
 });
 
 ipcMain.handle('save-settings', async (event, settings) => {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-    try {
-        await fs.writeJson(settingsPath, settings, { spaces: 2 });
-        return true;
-    } catch (error) {
-        console.error('Error saving settings:', error);
-        return false;
-    }
+  const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+  try {
+    await fs.writeJson(settingsPath, settings, { spaces: 2 });
+    return true;
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    return false;
+  }
 });
 
 ipcMain.handle('merge-pdfs', async (event, { mainFolder, insertFolder, outputFolder, recursiveMain, recursiveInsert }) => {
-    try {
-        const result = await mergePDFs(mainFolder, insertFolder, outputFolder, recursiveMain, recursiveInsert);
-        return result;
-    } catch (error) {
-        console.error('Error during PDF merge:', error);
-        return { error: (error as Error).message, processed: 0, skipped: 0, errors: [(error as Error).message], log: [`❌ Ошибка выполнения: ${(error as Error).message}`], total: 0 };
-    }
+  try {
+    return await mergePDFs(mainFolder, insertFolder, outputFolder, recursiveMain, recursiveInsert);
+  } catch (error) {
+    console.error('Error during PDF merge:', error);
+    return { error: (error as Error).message, processed: 0, skipped: 0, errors: [(error as Error).message], log: [`❌ Ошибка выполнения: ${(error as Error).message}`], total: 0 };
+  }
 });
 
 ipcMain.handle('open-folder', async (event, folderPath) => {
@@ -243,49 +264,35 @@ ipcMain.handle('open-folder', async (event, folderPath) => {
   }
 });
 
-// --- НОВЫЙ IPC Handler для построения словаря ---
 ipcMain.handle('build-dict', async (event, type: 'zepb' | 'insert', folderPath: string, recursive: boolean) => {
   try {
-    if (type === 'zepb') {
-      return await buildZepbDict(folderPath, recursive);
-    } else if (type === 'insert') {
-      return await buildInsertDict(folderPath, recursive);
-    } else {
-      throw new Error(`Unknown dict type: ${type}`);
-    }
+    return type === 'zepb'
+      ? await buildZepbDict(folderPath, recursive)
+      : await buildInsertDict(folderPath, recursive);
   } catch (error) {
     console.error(`Error building ${type} dict:`, error);
-    return {}; // Возвращаем пустой словарь в случае ошибки
+    return {};
   }
 });
 
-// --- НОВЫЙ IPC Handler для подсчета файлов в папке ---
 ipcMain.handle('count-files-in-folder', async (event, folderPath: string) => {
   try {
     const items = await fs.readdir(folderPath);
-    // Подсчитываем только файлы (а не подпапки)
-    const files = items.filter(item => {
-      const fullPath = path.join(folderPath, item);
-      return fs.statSync(fullPath).isFile();
-    });
+    const files = items.filter(item => fs.statSync(path.join(folderPath, item)).isFile());
     return files.length;
   } catch (error) {
     console.error(`Error counting files in folder ${folderPath}:`, error);
-    throw error; // renderer.ts должен обработать ошибку
+    throw error;
   }
 });
 
-// --- IPC Handlers для обновления ---
+// --- Автообновления ---
 ipcMain.handle('check-for-updates', async () => {
   try {
-    // Запускаем проверку. Результат придёт в виде событий.
-    // Мы не возвращаем версию напрямую, потому что autoUpdater сам решает, есть ли обновление.
     autoUpdater.checkForUpdates();
-    // Возвращаем null или undefined. Renderer будет ждать события.
     return null;
   } catch (error) {
     console.error('Error checking for updates:', error);
-    // Отправляем ошибку через событие, если нужно, или просто возвращаем null
     mainWindow?.webContents.send('update-error', (error as Error).message);
     return null;
   }
@@ -294,7 +301,6 @@ ipcMain.handle('check-for-updates', async () => {
 ipcMain.handle('download-update', async () => {
   try {
     await autoUpdater.downloadUpdate();
-    // autoUpdater будет генерировать события прогресса, которые мы обработаем ниже
     return true;
   } catch (error) {
     console.error('Error downloading update:', error);
@@ -302,120 +308,107 @@ ipcMain.handle('download-update', async () => {
   }
 });
 
+ipcMain.handle('compress-pdfs', async (event, { inputFolder, outputFolder }) => {
+  try {
+    const files = await fsPromises.readdir(inputFolder);
+    const pdfFiles = files.filter(f => f.toLowerCase().endsWith('.pdf'));
+
+    let processed = 0;
+    for (const file of pdfFiles) {
+      const inputPath = path.join(inputFolder, file);
+      const outputPath = path.join(outputFolder, file);
+      const pdfBytes = await fs.readFile(inputPath);
+      const pdfDoc = await PDFDocument.load(pdfBytes);
+      const newPdfBytes = await pdfDoc.save({ useObjectStreams: true });
+      await fs.writeFile(outputPath, newPdfBytes);
+      processed++;
+    }
+
+    return { processed, total: pdfFiles.length, log: [`✅ Сжато ${processed} файлов.`] };
+  } catch (err) {
+    console.error(err);
+    return { processed: 0, total: 0, log: [`❌ Ошибка: ${(err as Error).message}`] };
+  }
+});
+
 ipcMain.handle('quit-and-install', () => {
   console.log('Received quit-and-install command from renderer.');
-  // <-- НОВОЕ: Устанавливаем флаг isQuitting -->
   isQuitting = true;
   autoUpdater.quitAndInstall();
 });
 
-// --- IPC Handlers для обратной связи ---
-ipcMain.handle('get-app-info', async () => {
-  return {
-    version: app.getVersion(),
-    platform: process.platform,
-    arch: process.arch,
-  };
-});
+ipcMain.handle('get-app-info', async () => ({
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+}));
 
 ipcMain.handle('open-external-url', async (event, url: string) => {
   try {
     await shell.openExternal(url);
-    return true; // Успех
+    return true;
   } catch (error) {
     console.error(`Failed to open URL ${url}:`, error);
-    throw error; // Вызывает reject в promise на стороне renderer
+    throw error;
   }
 });
 
-// --- Логика обновления ---
-let updateAvailableVersion: string | null = null; // <-- НОВОЕ: Переменная для хранения версии
+// --- Обновления ---
+let updateAvailableVersion: string | null = null;
 
 autoUpdater.on('update-available', (info) => {
   console.log(`Update available: ${info.version}`);
-  updateAvailableVersion = info.version; // <-- НОВОЕ: Сохраняем версию
-  // <-- НОВОЕ: Отправляем событие в renderer только если версия новая -->
+  updateAvailableVersion = info.version;
   const currentVersion = app.getVersion();
   if (info.version !== currentVersion) {
     mainWindow?.webContents.send('update-available', info.version);
   } else {
-    console.log(`Update ${info.version} is the same as current version ${currentVersion}. Not sending notification.`);
-    // Сбрасываем флаг, если версии совпадают
-    updateAvailableVersion = null;
-    // Отправляем событие, что обновлений нет
     mainWindow?.webContents.send('update-not-available');
   }
 });
 
 autoUpdater.on('update-not-available', () => {
-  console.log('Update not available.');
-  updateAvailableVersion = null; // <-- НОВОЕ: Сбрасываем флаг
   mainWindow?.webContents.send('update-not-available');
 });
 
 autoUpdater.on('error', (err) => {
   console.error('Error in auto-updater:', err);
-  updateAvailableVersion = null; // <-- НОВОЕ: Сбрасываем флаг при ошибке
   mainWindow?.webContents.send('update-error', err.message);
 });
 
 autoUpdater.on('download-progress', (progress) => {
-  console.log(`Download progress: ${progress.percent}%`);
   mainWindow?.webContents.send('update-download-progress', progress.percent);
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  console.log(`Update downloaded: ${info.version}`);
-  updateAvailableVersion = null; // <-- НОВОЕ: Сбрасываем флаг после скачивания
   mainWindow?.webContents.send('update-downloaded', info.version);
 });
 
-// --- Запуск окна ---
+// --- Окно приложения ---
 const createWindow = () => {
-    mainWindow = new BrowserWindow({
-        width: 900,
-        height: 750,
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            nodeIntegration: false,
-            contextIsolation: true,
-        },
-        icon: path.join(__dirname, '../assets/icon.png'), // Опционально
-        autoHideMenuBar: true,
-    });
+  mainWindow = new BrowserWindow({
+    width: 900,
+    height: 750,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+    icon: path.join(__dirname, '../assets/icon.png'),
+    autoHideMenuBar: true,
+  });
 
-    mainWindow.loadFile(path.join(__dirname, 'index.html'));
-
-    // --- Логика обновления ---
-    // <-- НОВОЕ: Проверяем обновления после загрузки окна -->
-    mainWindow.webContents.once('did-finish-load', () => {
-      console.log('Main window loaded. Initiating auto-update check.');
-      autoUpdater.checkForUpdates();
-    });
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.webContents.once('did-finish-load', () => autoUpdater.checkForUpdates());
 };
 
 app.whenReady().then(() => {
-    createWindow();
-
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow();
-        }
-    });
+  createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 });
 
-// --- Обновлённый обработчик window-all-closed ---
 app.on('window-all-closed', () => {
-    console.log(`App received 'window-all-closed'. isQuitting flag is: ${isQuitting}`);
-    // Если мы сами инициировали закрытие (isQuitting=true), не завершаем приложение здесь,
-    // так как autoUpdater.quitAndInstall() сам его завершит и перезапустит.
-    if (!isQuitting) {
-        console.log("isQuitting is false. Proceeding with standard quit logic.");
-        if (process.platform !== 'darwin') {
-            console.log("Platform is not darwin. Quitting app.");
-            app.quit();
-        }
-    } else {
-        console.log("isQuitting is true. Skipping standard quit logic.");
-    }
+  if (!isQuitting && process.platform !== 'darwin') app.quit();
 });

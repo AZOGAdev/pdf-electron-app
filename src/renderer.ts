@@ -6,14 +6,19 @@ let insertFolder = '';
 let outputFolder = '';
 let insertDict: Record<string, string> = {};
 let zepbDict: Record<string, string> = {};
+let lastSelectedMainFolder: string | null = null;
+let lastSelectedInsertFolder: string | null = null;
+let lastSelectedOutputFolder: string | null = null;
+
+const baseName = window.electronAPI.basename(notifPath);
 
 // --- DOM Elements ---
 const navMode1 = document.getElementById('nav-mode1') as HTMLButtonElement;
-const navMode2 = document.getElementById('nav-mode2') as HTMLButtonElement; // Предположим, это Mode2
+const navMode2 = document.getElementById('nav-mode-compress') as HTMLButtonElement; // Предположим, это Mode2
 const navSettings = document.getElementById('nav-settings') as HTMLButtonElement;
 
 const mode1Content = document.getElementById('mode1-content') as HTMLDivElement;
-const mode2Content = document.getElementById('mode2-content') as HTMLDivElement; // Добавлено
+const mode2Content = document.getElementById('compress-content') as HTMLDivElement; // Добавлено
 const settingsContent = document.getElementById('settings-content') as HTMLDivElement;
 
 const btnMain = document.getElementById('btn-main') as HTMLButtonElement;
@@ -246,6 +251,13 @@ const applyTheme = (isDark: boolean) => {
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
 };
 
+// --- Вспомогательная функция для выбора папки с запоминанием ---
+const selectFolder = async (lastSelected: string | null) => {
+    const folder = await window.electronAPI.selectFolder();
+    return folder;
+};
+
+
 const loadTheme = () => {
     const savedTheme = localStorage.getItem('theme');
     const isDark = savedTheme === 'dark' || (savedTheme === null && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -257,6 +269,7 @@ const loadTheme = () => {
 const showMode = (modeId: string) => {
     mode1Content.style.display = 'none';
     settingsContent.style.display = 'none';
+    mode2Content.style.display = 'none';
 
     switch (modeId) {
         case 'mode1':
@@ -265,17 +278,23 @@ const showMode = (modeId: string) => {
         case 'settings':
             settingsContent.style.display = 'block';
             break;
+        case 'compress':
+            mode2Content.style.display = 'block';
+            break;
         default:
             mode1Content.style.display = 'block';
     }
 
     navMode1.classList.remove('active');
     navSettings.classList.remove('active');
+    navMode2.classList.remove('active');
 
     if (modeId === 'mode1') {
         navMode1.classList.add('active');
     } else if (modeId === 'settings') {
         navSettings.classList.add('active');
+    } else if (modeId === 'compress') {
+        navMode2.classList.add('active');
     }
 };
 
@@ -452,22 +471,24 @@ btnDismissPopup.addEventListener('click', () => {
 // --- Основные обработчики событий ---
 navMode1.addEventListener('click', () => showMode('mode1'));
 navSettings.addEventListener('click', () => showMode('settings'));
-// navMode2.addEventListener('click', () => showMode('mode2')); // Добавь, если Mode2 активен
+navMode2.addEventListener('click', () => showMode('compress')); // Добавь, если Mode2 активен
 
 btnMain.addEventListener('click', async () => {
     const originalText = btnMain.innerHTML;
     btnMain.innerHTML = '<i data-lucide="loader" class="loader"></i> Сканирование...';
     btnMain.disabled = true;
 
-    const folder = await window.electronAPI.selectFolder();
+    const folder = await selectFolder(lastSelectedMainFolder);
     if (folder) {
         mainFolder = folder;
+        lastSelectedMainFolder = folder;
         updateFolderLabel(labelMain, folder);
         zepbDict = await window.electronAPI.buildDict('zepb', mainFolder, chkMainRecursive.checked);
         updateStats();
         checkReady();
         saveSettings();
     }
+
     btnMain.innerHTML = originalText;
     btnMain.disabled = false;
 });
@@ -477,23 +498,26 @@ btnInsert.addEventListener('click', async () => {
     btnInsert.innerHTML = '<i data-lucide="loader" class="loader"></i> Сканирование...';
     btnInsert.disabled = true;
 
-    const folder = await window.electronAPI.selectFolder();
+    const folder = await selectFolder(lastSelectedInsertFolder);
     if (folder) {
         insertFolder = folder;
+        lastSelectedInsertFolder = folder;
         updateFolderLabel(labelInsert, folder);
         insertDict = await window.electronAPI.buildDict('insert', insertFolder, chkInsertRecursive.checked);
         updateStats();
         checkReady();
         saveSettings();
     }
+
     btnInsert.innerHTML = originalText;
     btnInsert.disabled = false;
 });
 
 btnOutput.addEventListener('click', async () => {
-    const folder = await window.electronAPI.selectFolder();
+    const folder = await selectFolder(lastSelectedOutputFolder);
     if (folder) {
         outputFolder = folder;
+        lastSelectedOutputFolder = folder;
         updateFolderLabel(labelOutput, folder);
         btnOpenOutput.disabled = false;
         updateStats();
@@ -510,60 +534,64 @@ btnRun.addEventListener('click', async () => {
 
     log('🚀 Начинаю объединение...', 'info');
     btnRun.disabled = true;
-    progressBarFill.style.width = '0%'; // Сбросим прогресс перед началом
-    statsResults.style.display = 'none'; // Скроем статистику до завершения
+    progressBarFill.style.width = '0%';
+    statsResults.style.display = 'none';
     logContainer.style.display = 'block';
     logArea.value = '';
 
     try {
-        const result = await window.electronAPI.mergePDFs({
-            mainFolder,
-            insertFolder,
-            outputFolder,
-            recursiveMain: chkMainRecursive.checked,
-            recursiveInsert: chkInsertRecursive.checked,
-        });
+        const insertKeys = Object.keys(insertDict);
+        const totalFiles = insertKeys.length;
+        let processed = 0;
+        let skipped = 0;
 
-        if (result.error) {
-            log(`❌ Ошибка: ${result.error}`, 'error');
-        } else {
-            progressBarFill.style.width = '100%'; // Заполним прогресс-бар
-            result.log.forEach((msg: string) => {
-                if (msg.includes('✅')) {
-                    log(msg, 'success');
-                } else if (msg.includes('⚠️') || msg.includes('⏭️')) {
-                    log(msg, 'warning');
-                } else if (msg.includes('❌')) {
-                    log(msg, 'error');
-                } else {
-                    log(msg, 'info');
+        for (const notifCode of insertKeys) {
+            const notifPath = insertDict[notifCode];
+            const matchingZepbPath = zepbDict[notifCode];
+
+            if (!matchingZepbPath) {
+                log(`⚠️ Не найден ЗЭПБ для уведомления: ${baseName} (${notifCode})`, 'warning');
+                skipped++;
+            } else {
+                try {
+                    const result = await window.electronAPI.mergePDFs({
+                        mainFolder,
+                        insertFolder,
+                        outputFolder,
+                        recursiveMain: chkMainRecursive.checked,
+                        recursiveInsert: chkInsertRecursive.checked,
+                        singleCode: notifCode
+                    });
+                    result.log.forEach((msg: string) => {
+                        if (msg.includes('✅')) log(msg, 'success');
+                        else if (msg.includes('⚠️') || msg.includes('⏭️')) log(msg, 'warning');
+                        else if (msg.includes('❌')) log(msg, 'error');
+                        else log(msg, 'info');
+                    });
+                    processed += result.processed;
+                    skipped += result.skipped;
+                } catch (err) {
+                    log(`❌ Ошибка при обработке ${notifCode}: ${(err as Error).message}`, 'error');
+                    skipped++;
                 }
-            });
-            log(`\n🎉 Обработка завершена!\n📊 Результаты:\n✅ Успешно объединено: ${result.processed}\n⏭️ Пропущено: ${result.skipped}\n📋 Всего обработано: ${result.total}`, 'success');
-            log('📄 Лог сохранён в папке результатов.', 'info');
+            }
 
-            statsSuccess.textContent = result.processed.toString();
-            statsSkipped.textContent = result.skipped.toString();
-            statsTotal.textContent = result.total.toString();
-            statsResults.style.display = 'flex'; // Покажем статистику
-
-            window.electronAPI.countFilesInFolder(outputFolder).then(count => {
-                statsOutput.textContent = count.toString();
-            }).catch(() => {
-                statsOutput.textContent = '?';
-            });
+            progressBarFill.style.width = `${Math.round(((processed + skipped) / totalFiles) * 100)}%`;
+            await new Promise(r => setTimeout(r, 10)); // Даем время UI обновиться
         }
-    } catch (error) {
-        console.error('Merge error:', error);
-        log(`❌ Ошибка выполнения: ${(error as Error).message}`, 'error');
+
+        statsSuccess.textContent = processed.toString();
+        statsSkipped.textContent = skipped.toString();
+        statsTotal.textContent = totalFiles.toString();
+        statsResults.style.display = 'flex';
+        log(`\n🎉 Обработка завершена!\n✅ Успешно объединено: ${processed}\n⏭️ Пропущено: ${skipped}\n📋 Всего файлов: ${totalFiles}`, 'success');
+    } catch (err) {
+        log(`❌ Ошибка выполнения: ${(err as Error).message}`, 'error');
     } finally {
         btnRun.disabled = false;
-        // Убираем скрытие progressContainer и сброс прогресса
-        // progressContainer.style.display = 'none'; // <-- УДАЛЕНО
-        // progressBarFill.style.width = '0%'; // <-- УДАЛЕНО
-        // Вместо этого, оставляем прогресс-бар видимым и заполненным
     }
 });
+
 
 btnOpenOutput.addEventListener('click', async () => {
     if (outputFolder) {
@@ -677,6 +705,44 @@ btnSendFeedback.addEventListener('click', async () => {
         btnSendFeedback.disabled = false;
     }
 });
+
+const btnCompress = document.getElementById('btn-compress') as HTMLButtonElement;
+const btnCompressRun = document.getElementById('btn-compress-run') as HTMLButtonElement;
+const labelCompress = document.getElementById('label-compress') as HTMLInputElement;
+
+let compressFolder = '';
+let compressOutputFolder = ''; // Можно сделать отдельный вывод или использовать ту же папку
+
+btnCompress.addEventListener('click', async () => {
+    const folder = await window.electronAPI.selectFolder();
+    if (folder) {
+        compressFolder = folder;
+        labelCompress.value = folder;
+    }
+});
+
+btnCompressRun.addEventListener('click', async () => {
+    if (!compressFolder || !outputFolder) {
+        alert('Выберите папку для сжатия и папку вывода');
+        return;
+    }
+
+    btnCompressRun.disabled = true;
+
+    try {
+        const result = await window.electronAPI.compressPDFs({ inputFolder: compressFolder, outputFolder });
+        console.log(result.log.join('\n'));
+        alert(`Сжатие завершено. Обработано ${result.processed} файлов из ${result.total}`);
+    } catch (err) {
+        console.error('Ошибка при сжатии PDF:', err);
+        alert('Произошла ошибка при сжатии PDF. Смотрите консоль для подробностей.');
+    } finally {
+        // Кнопка разблокируется в любом случае
+        btnCompressRun.disabled = false;
+    }
+});
+
+
 
 // --- Инициализация ---
 document.addEventListener('DOMContentLoaded', () => {
