@@ -5,6 +5,10 @@ import { promises as fsp } from 'fs';
 import { PDFDocument } from 'pdf-lib';
 import { autoUpdater } from 'electron-updater';
 import { Document, Packer, Paragraph, TextRun, LevelFormat, AlignmentType } from 'docx';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import os from 'os';
+import { randomUUID } from 'crypto';
 
 // Короткие комментарии: основные функции main.
 // preload -> main: preload пробрасывает invoke/on к main ipc.
@@ -12,6 +16,7 @@ import { Document, Packer, Paragraph, TextRun, LevelFormat, AlignmentType } from
 
 const PREFIXES = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
 const CODE_REGEX = new RegExp(`(${PREFIXES.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})-\\d+(?:\\.\\d+)?`, 'i');
+const execFileAsync = promisify(execFile);
 
 let mainWindow: BrowserWindow | null = null;
 let logWindow: BrowserWindow | null = null;
@@ -507,24 +512,151 @@ ipcMain.handle('open-folder', async (_e, folderPath: string) => {
   try { await shell.openPath(folderPath); return true; } catch { return false; }
 });
 
-ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder }) => {
+ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder, quality = 30 }: { inputFolder: string; outputFolder: string; quality?: number }) => {
+  const result: { processed: number; total: number; log: string[]; used?: string; files?: Array<{ name: string; inSize?: number; outSize?: number; ok: boolean; error?: string; notes?: string }> } = { processed: 0, total: 0, log: [], used: 'none', files: [] };
+
   try {
-    const files = await fsp.readdir(inputFolder);
-    const pdfs = files.filter(f => f.toLowerCase().endsWith('.pdf'));
+    if (!inputFolder || !outputFolder) throw new Error('Не указаны папки inputFolder/outputFolder');
+    if (!(await fs.pathExists(inputFolder))) throw new Error(`Input folder не найден: ${inputFolder}`);
     await fs.ensureDir(outputFolder);
-    let processed = 0;
-    for (const f of pdfs) {
-      const inP = path.join(inputFolder, f);
-      const outP = path.join(outputFolder, f);
-      const buf = await fsp.readFile(inP);
-      const doc = await PDFDocument.load(buf);
-      const newBuf = await doc.save({ useObjectStreams: true });
-      await fsp.writeFile(outP, newBuf);
-      processed++;
+
+    const all = await fsp.readdir(inputFolder);
+    const pdfs = all.filter(f => f.toLowerCase().endsWith('.pdf'));
+    result.total = pdfs.length;
+    result.log.push(`Найдено ${pdfs.length} PDF в ${inputFolder}`);
+
+    async function findGhostscript(): Promise<string | null> {
+      const candidates = ['gs', 'gswin64c', 'gswin32c'];
+      for (const c of candidates) {
+        try { await execFileAsync(c, ['--version']); return c; } catch { /* ignore */ }
+      }
+      return null;
     }
-    return { processed, total: pdfs.length, log: [`Сжато ${processed} файлов.`] };
+
+    function qualityToPdfSettings(q: number) {
+      if (q <= 12) return '/screen';
+      if (q <= 25) return '/ebook';
+      if (q <= 40) return '/printer';
+      return '/prepress';
+    }
+
+    const gsCmd = await findGhostscript();
+    if (gsCmd) result.used = `ghostscript (${gsCmd})`;
+    else result.used = 'pdf-lib(fallback)';
+
+    for (const fname of pdfs) {
+      const inP = path.join(inputFolder, fname);
+      const outP = path.join(outputFolder, fname);
+      const fileInfo: any = { name: fname, ok: false };
+
+      // tmp имена для текущего файла (в области видимости цикла)
+      const tmpIn = path.join(os.tmpdir(), `in-${randomUUID()}.pdf`);
+      const tmpOut = path.join(os.tmpdir(), `out-${randomUUID()}.pdf`);
+
+      try {
+        const statIn = await fsp.stat(inP).catch(() => ({ size: undefined }));
+        fileInfo.inSize = statIn.size;
+
+        if (gsCmd) {
+          // копируем входной файл в tmp с ASCII-именем
+          await fsp.copyFile(inP, tmpIn);
+
+          const pdfSetting = qualityToPdfSettings(quality);
+          const args = [
+            '-sDEVICE=pdfwrite',
+            '-dCompatibilityLevel=1.4',
+            `-dPDFSETTINGS=${pdfSetting}`,
+            '-dNOPAUSE',
+            '-dBATCH',
+            // убираем -dQUIET для диагностики
+            `-sOutputFile=${tmpOut}`,
+            tmpIn
+          ];
+
+          try {
+            const { stdout, stderr } = await execFileAsync(gsCmd, args);
+            if (stdout) {
+              result.log.push(`[gs stdout] ${String(stdout).trim()}`);
+              if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `[gs stdout] ${String(stdout).trim()}`);
+            }
+            if (stderr) {
+              result.log.push(`[gs stderr] ${String(stderr).trim()}`);
+              if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `[gs stderr] ${String(stderr).trim()}`);
+            }
+
+            if (!(await fs.pathExists(tmpOut))) {
+              throw new Error(`Ghostscript не создал выходной файл (tmpOut отсутствует)`);
+            }
+
+            // Копируем tmpOut в выходную папку
+            await fs.copy(tmpOut, outP, { overwrite: true });
+
+            fileInfo.ok = true;
+            fileInfo.notes = `compressed with GS setting=${pdfSetting}`;
+            result.log.push(`GS: ${fname} -> ${outP} (${pdfSetting})`);
+            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `GS: ${fname} -> ${outP} (${pdfSetting})`);
+          } catch (gsErr) {
+            const gsErrMsg = (gsErr as Error).message || String(gsErr);
+            result.log.push(`GS error for ${fname}: ${gsErrMsg}`);
+            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `GS error for ${fname}: ${gsErrMsg}`);
+
+            // Попытка очистки временных файлов перед fallback
+            try { if (await fs.pathExists(tmpIn)) await fsp.unlink(tmpIn); } catch {}
+            try { if (await fs.pathExists(tmpOut)) await fsp.unlink(tmpOut); } catch {}
+
+            // не возвращаемся — продолжим с fallback
+          }
+        }
+
+        if (!fileInfo.ok) {
+          // fallback через pdf-lib
+          try {
+            const buf = await fsp.readFile(inP);
+            const doc = await PDFDocument.load(buf);
+            const newBuf = await doc.save({ useObjectStreams: true });
+            await fsp.writeFile(outP, newBuf);
+            fileInfo.ok = true;
+            fileInfo.notes = 'fallback pdf-lib';
+            result.log.push(`Fallback: ${fname} -> ${outP}`);
+            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `Fallback: ${fname} -> ${outP}`);
+          } catch (fbErr) {
+            const em = `Fallback error ${fname}: ${(fbErr as Error).message}`;
+            fileInfo.error = em;
+            result.log.push(em);
+            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', em);
+          }
+        }
+
+        const statOut = await fsp.stat(outP).catch(() => ({ size: undefined }));
+        fileInfo.outSize = statOut.size;
+        if (fileInfo.inSize && fileInfo.outSize) {
+          const diff = (fileInfo.inSize || 0) - (fileInfo.outSize || 0);
+          const pct = fileInfo.inSize ? Math.round((diff / (fileInfo.inSize as number)) * 100) : 0;
+          result.log.push(`Размеры ${fname}: ${fileInfo.inSize} -> ${fileInfo.outSize} (${pct >= 0 ? '-' + pct + '%' : '+' + (-pct) + '%'})`);
+        }
+
+        result.processed++;
+      } catch (err) {
+        const em = `Ошибка при обработке ${fname}: ${(err as Error).message}`;
+        fileInfo.error = em;
+        result.log.push(em);
+        if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', em);
+      } finally {
+        // Гарантированная очистка tmp-файлов текущей итерации
+        try { if (await fs.pathExists(tmpIn)) await fsp.unlink(tmpIn); } catch {}
+        try { if (await fs.pathExists(tmpOut)) await fsp.unlink(tmpOut); } catch {}
+
+        result.files!.push(fileInfo);
+      }
+    }
+
+    result.log.unshift(`Сжатие завершено. Engine: ${result.used}`);
+    return result;
   } catch (err) {
-    return { processed: 0, total: 0, log: [`Ошибка: ${(err as Error).message}`] };
+    const em = `Ошибка compress-pdfs: ${(err as Error).message}`;
+    result.log.push(em);
+    if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', em);
+    return result;
   }
 });
 

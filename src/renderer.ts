@@ -11,6 +11,9 @@ let zepbDict: Record<string, string> = {};
 let lastSelectedMainFolder: string | null = null;
 let lastSelectedInsertFolder: string | null = null;
 let lastSelectedOutputFolder: string | null = null;
+let lastSelectedCompress: string | null = null;
+let compressOutputFolder: string | null = null;
+let lastSelectedCompressOutputFolder: string | null = null;
 
 /* DOM элементы */
 const navMode1 = document.getElementById('nav-mode1') as HTMLButtonElement;
@@ -66,9 +69,12 @@ const btnUpdatePopup = document.getElementById('btn-update-popup') as HTMLButton
 const btnDismissPopup = document.getElementById('btn-dismiss-popup') as HTMLButtonElement;
 
 /* Compress controls */
-const btnCompress = document.getElementById('btn-compress') as HTMLButtonElement;
-const btnCompressRun = document.getElementById('btn-compress-run') as HTMLButtonElement;
-const labelCompress = document.getElementById('label-compress') as HTMLInputElement;
+const btnCompress = document.getElementById('btn-compress') as HTMLButtonElement | null;
+  const btnCompressOutput = document.getElementById('btn-compress-output') as HTMLButtonElement | null;
+  const btnCompressRun = document.getElementById('btn-compress-run') as HTMLButtonElement | null;
+  const labelCompress = document.getElementById('label-compress') as HTMLInputElement | null;
+  const labelCompressOutput = document.getElementById('label-compress-output') as HTMLInputElement | null;
+  const selectCompressQuality = document.getElementById('compress-quality') as HTMLSelectElement | null;
 
 /* Динамически создаём кнопку "Открыть лог", если её нет в DOM */
 (function ensureLogButton() {
@@ -132,6 +138,81 @@ const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 
   try { window.electronAPI.appendLog(line); } catch { /* ignore */ }
 };
 
+// Aктивация кнопки запуска сжатия: включаем, когда выбраны входная и выходная папки
+function updateCompressReady() {
+  const hasInput = labelCompress && labelCompress.value && labelCompress.value !== 'Не выбрана';
+  const hasOutput = compressOutputFolder && compressOutputFolder !== '';
+  if (btnCompressRun) btnCompressRun.disabled = !(!!hasInput && !!hasOutput);
+}
+
+// Кнопка выбора папки с PDF для сжатия
+  if (btnCompress) btnCompress.addEventListener('click', async () => {
+    const orig = btnCompress.innerHTML;
+    btnCompress.innerHTML = '<i data-lucide="loader" class="loader"></i> Сканирование...';
+    btnCompress.disabled = true;
+    try {
+      const folder = await window.electronAPI.selectFolder(lastSelectedCompress ?? undefined);
+      if (folder) {
+        lastSelectedCompress = folder;
+        if (labelCompress) labelCompress.value = folder;
+
+        // Если папка вывода для сжатия не выбрана — автоназначим ту же папку (удобство)
+        if (!compressOutputFolder) {
+          compressOutputFolder = folder;
+          lastSelectedCompressOutputFolder = folder;
+          if (labelCompressOutput) labelCompressOutput.value = folder;
+          try { await saveSettings(); } catch { /* ignore */ }
+        }
+      }
+      updateCompressReady();
+    } finally {
+      btnCompress.innerHTML = orig;
+      btnCompress.disabled = false;
+    }
+  });
+
+  // Обработчик выбора папки вывода для сжатия
+  if (btnCompressOutput) btnCompressOutput.addEventListener('click', async () => {
+    const orig = btnCompressOutput.innerHTML;
+    btnCompressOutput.innerHTML = '<i data-lucide="loader" class="loader"></i> Сканирование...';
+    btnCompressOutput.disabled = true;
+    try {
+      const folder = await window.electronAPI.selectFolder(lastSelectedCompressOutputFolder ?? undefined);
+      if (folder) {
+        compressOutputFolder = folder;
+        lastSelectedCompressOutputFolder = folder;
+        if (labelCompressOutput) labelCompressOutput.value = folder;
+        try { await saveSettings(); } catch { /* ignore */ }
+      }
+      updateCompressReady();
+    } finally {
+      btnCompressOutput.innerHTML = orig;
+      btnCompressOutput.disabled = false;
+    }
+  });
+
+  // Обработчик запуска сжатия — используем compressOutputFolder как выходную
+  if (btnCompressRun) btnCompressRun.addEventListener('click', async () => {
+    if (!labelCompress || !labelCompress.value || !compressOutputFolder) {
+      showPopup('Выберите входную и выходную папки для сжатия', 5000);
+      return;
+    }
+    const quality = selectCompressQuality ? parseInt(selectCompressQuality.value, 10) : 30;
+    log(`Запущено сжатие: ${labelCompress.value} -> ${compressOutputFolder}, качество ${quality}%`, 'info');
+    setBusy(true);
+    try {
+      const res = await window.electronAPI.compressPDFs({ inputFolder: labelCompress.value, outputFolder: compressOutputFolder, quality });
+      if (res && Array.isArray(res.log)) res.log.forEach((m: string) => log(m, m.includes('Ошибка') ? 'error' : 'info'));
+      showPopup(`Сжатие завершено: обработано ${res.processed}/${res.total}`, 6000);
+      updateStats();
+    } catch (err) {
+      log(`Ошибка при сжатии: ${(err as Error).message}`, 'error');
+      showPopup('Ошибка при сжатии. Проверьте лог.', 8000);
+    } finally {
+      setBusy(false);
+    }
+  });
+
 /* Блокировка UI и показ/скрытие спиннера */
 const setBusy = (busy: boolean) => {
   const elements = [
@@ -173,18 +254,97 @@ const updateFolderLabel = (el: HTMLInputElement, folder: string | null) => {
 const loadSettings = async () => {
   try {
     const s = await window.electronAPI.loadSettings();
-    if (s.mainFolder) { mainFolder = s.mainFolder; lastSelectedMainFolder = s.mainFolder; updateFolderLabel(labelMain, mainFolder); zepbDict = await window.electronAPI.buildDict('zepb', mainFolder, s.mainRecursive); }
-    if (s.insertFolder) { insertFolder = s.insertFolder; lastSelectedInsertFolder = s.insertFolder; updateFolderLabel(labelInsert, insertFolder); insertDict = await window.electronAPI.buildDict('insert', insertFolder, s.insertRecursive); }
-    if (s.outputFolder) { outputFolder = s.outputFolder; lastSelectedOutputFolder = s.outputFolder; updateFolderLabel(labelOutput, outputFolder); (document.getElementById('btn-open-output') as HTMLButtonElement).disabled = false; }
+
+    // Основные папки (как раньше)
+    if (s.mainFolder) {
+      mainFolder = s.mainFolder;
+      lastSelectedMainFolder = s.mainFolder;
+      updateFolderLabel(labelMain, mainFolder);
+      try { zepbDict = await window.electronAPI.buildDict('zepb', mainFolder, !!s.mainRecursive); } catch { zepbDict = {}; }
+    }
+
+    if (s.insertFolder) {
+      insertFolder = s.insertFolder;
+      lastSelectedInsertFolder = s.insertFolder;
+      updateFolderLabel(labelInsert, insertFolder);
+      try { insertDict = await window.electronAPI.buildDict('insert', insertFolder, !!s.insertRecursive); } catch { insertDict = {}; }
+    }
+
+    if (s.outputFolder) {
+      outputFolder = s.outputFolder;
+      lastSelectedOutputFolder = s.outputFolder;
+      updateFolderLabel(labelOutput, outputFolder);
+      const btnOpenOut = document.getElementById('btn-open-output') as HTMLButtonElement | null;
+      if (btnOpenOut) btnOpenOut.disabled = false;
+    }
+
+    // Восстановление чекбоксов рекурсивного сканирования
     if (typeof s.mainRecursive === 'boolean') chkMainRecursive.checked = s.mainRecursive;
     if (typeof s.insertRecursive === 'boolean') chkInsertRecursive.checked = s.insertRecursive;
-    updateStats(); checkReady();
-  } catch (err) { console.error('Ошибка загрузки настроек', err); }
+
+    // --- Новое: восстановление настроек для режима сжатия ---
+    // restore compress input
+    if (s.compressInputFolder) {
+      lastSelectedCompress = s.compressInputFolder;
+      if (labelCompress) labelCompress.value = s.compressInputFolder;
+    }
+    // restore compress output
+    if (s.compressOutputFolder) {
+      compressOutputFolder = s.compressOutputFolder;
+      lastSelectedCompressOutputFolder = s.compressOutputFolder;
+      if (labelCompressOutput) {
+        // updateFolderLabel работает с HTMLInputElement
+        updateFolderLabel(labelCompressOutput, compressOutputFolder);
+      } else {
+        // если элемент отсутствует — попытка прямой запись безопасно (используем пустую строку вместо null)
+        try { (document.getElementById('label-compress-output') as HTMLInputElement).value = compressOutputFolder ?? ''; } catch {}
+      }
+      const btnCompOut = document.getElementById('btn-compress-output') as HTMLButtonElement | null;
+      if (btnCompOut) btnCompOut.disabled = false;
+    }
+
+    // Восстановление выбранного качества (если сохранено)
+    try {
+      if (s.compressQuality && selectCompressQuality) {
+        selectCompressQuality.value = String(s.compressQuality);
+      }
+    } catch { /* ignore */ }
+
+    // Обновляем UI/статусы
+    updateStats();
+    checkReady();
+
+    // Обновляем состояние кнопки сжатия
+    updateCompressReady();
+  } catch (err) {
+    console.error('Ошибка загрузки настроек', err);
+  }
 };
 
 const saveSettings = async () => {
-  const s = { mainFolder, insertFolder, outputFolder, mainRecursive: chkMainRecursive.checked, insertRecursive: chkInsertRecursive.checked, lastSelectedMainFolder, lastSelectedInsertFolder, lastSelectedOutputFolder };
-  try { await window.electronAPI.saveSettings(s); } catch (err) { console.error('Ошибка сохранения настроек', err); }
+  // Собираем настройки для сохранения — включаем поля для compress
+  const s: any = {
+    mainFolder,
+    insertFolder,
+    outputFolder,
+    mainRecursive: chkMainRecursive.checked,
+    insertRecursive: chkInsertRecursive.checked,
+    lastSelectedMainFolder,
+    lastSelectedInsertFolder,
+    lastSelectedOutputFolder,
+    // поля для режима сжатия
+    compressInputFolder: lastSelectedCompress ?? null,
+    compressOutputFolder: compressOutputFolder ?? null,
+    lastSelectedCompressOutputFolder: lastSelectedCompressOutputFolder ?? null,
+    // сохраняем выбранное качество как число, если есть
+    compressQuality: selectCompressQuality ? parseInt(selectCompressQuality.value, 10) : undefined
+  };
+
+  try {
+    await window.electronAPI.saveSettings(s);
+  } catch (err) {
+    console.error('Ошибка сохранения настроек', err);
+  }
 };
 
 /* Тема: загрузка и переключение, сохраняется в localStorage */
@@ -339,7 +499,17 @@ if (btnInsert) btnInsert.addEventListener('click', async () => {
 
 if (btnOutput) btnOutput.addEventListener('click', async () => {
   const folder = await selectFolder(lastSelectedOutputFolder);
-  if (folder) { outputFolder = folder; lastSelectedOutputFolder = folder; updateFolderLabel(labelOutput, folder); (document.getElementById('btn-open-output') as HTMLButtonElement).disabled = false; updateStats(); checkReady(); await saveSettings(); }
+  if (folder) {
+    outputFolder = folder;
+    lastSelectedOutputFolder = folder;
+    updateFolderLabel(labelOutput, folder);
+    (document.getElementById('btn-open-output') as HTMLButtonElement).disabled = false;
+    updateStats(); checkReady();
+    await saveSettings();
+
+    // <--- ВАЖНО: при изменении папки результатов обновляем готовность кнопки сжатия
+    updateCompressReady();
+  }
 });
 
 const btnOpenLogEl = document.getElementById('btn-open-log') as HTMLButtonElement | null;
@@ -416,6 +586,6 @@ function showMode(modeId: string) {
 }
 
 /* Инициализация */
-document.addEventListener('DOMContentLoaded', () => { loadTheme(); loadSettings(); checkReady(); });
+document.addEventListener('DOMContentLoaded', () => { loadTheme(); loadSettings(); checkReady(); updateCompressReady(); });
 
 })();

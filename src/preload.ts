@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
 
   // Сжатие PDF (main)
-  compressPDFs: (opts: { inputFolder: string, outputFolder: string }) => ipcRenderer.invoke('compress-pdfs', opts),
+  compressPDFs: (opts: { inputFolder: string, outputFolder: string, quality?: number }) => ipcRenderer.invoke('compress-pdfs', opts),
 
   // Обновления
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

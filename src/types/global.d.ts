@@ -26,7 +26,7 @@ declare global {
       buildDict: (type: 'zepb' | 'insert', folderPath: string, recursive: boolean) => Promise<Record<string, string>>;
       countFilesInFolder: (folderPath: string) => Promise<number>;
       openFolder: (folderPath: string) => Promise<boolean>;
-      compressPDFs: (options: { inputFolder: string; outputFolder: string }) => Promise<{ processed: number; total: number; log: string[] }>;
+      compressPDFs: (options: { inputFolder: string; outputFolder: string; quality?: number }) => Promise<{ processed: number; total: number; log: string[]; used?: string }>;
       getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
       openExternalUrl: (url: string) => Promise<void>;
       checkForUpdates: () => Promise<null>;
