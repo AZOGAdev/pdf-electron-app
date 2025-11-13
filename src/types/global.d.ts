@@ -1,44 +1,55 @@
-// src/types/global.d.ts
+// Описание window.electronAPI (короткие комменты).
+// preload пробрасывает эти методы в renderer, они вызывают соответствующие ipc каналы в main.
 
-// Глобальное объявление для window.electronAPI
 declare global {
   interface Window {
     electronAPI: {
       selectFolder: (defaultPath?: string) => Promise<string | null>;
-      loadSettings: () => Promise<any>;
       basename: (fullPath: string) => string;
+      loadSettings: () => Promise<any>;
       saveSettings: (settings: any) => Promise<boolean>;
-      mergePDFs: (options: any) => Promise<any>;
-      openFolder: (folderPath: string) => Promise<boolean>;
+      mergePDFs: (options: {
+        mainFolder: string;
+        insertFolder: string;
+        outputFolder: string;
+        recursiveMain: boolean;
+        recursiveInsert: boolean;
+      }) => Promise<{
+        processed: number;
+        skipped: number;
+        errors: string[];
+        log: string[];
+        total: number;
+      }>;
+      cancelMerge: () => Promise<boolean>;
+      setTheme: (isDark: boolean) => void;
       buildDict: (type: 'zepb' | 'insert', folderPath: string, recursive: boolean) => Promise<Record<string, string>>;
-      // --- НОВОЕ: Объявление для countFilesInFolder ---
       countFilesInFolder: (folderPath: string) => Promise<number>;
-      // --- НОВОЕ: Объявления для обновления ---
-      checkForUpdates: () => Promise<null>; // Возвращаем null, так как результат приходит по событиям
-      downloadUpdate: () => Promise<boolean>;
-      // --- НОВОЕ: Метод для автоматической установки обновления ---
-      quitAndInstall: () => void;
-      onUpdateReadyToInstall: (callback: (event: any, version: string) => void) => () => void;
-      // --- НОВОЕ: Слушатель для события, что окно готово к проверке обновлений ---
-      onAppReadyForUpdateCheck: (callback: () => void) => () => void;
-      // Слушатели событий обновления
-      getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
-      // ... (все остальные методы) ...
-      openExternalUrl: (url: string) => Promise<void>;
+      openFolder: (folderPath: string) => Promise<boolean>;
       compressPDFs: (options: { inputFolder: string; outputFolder: string }) => Promise<{ processed: number; total: number; log: string[] }>;
-    } & UpdateEventCallbacks;
+      getAppInfo: () => Promise<{ version: string; platform: string; arch: string }>;
+      openExternalUrl: (url: string) => Promise<void>;
+      checkForUpdates: () => Promise<null>;
+      downloadUpdate: () => Promise<boolean>;
+      quitAndInstall: () => Promise<void>;
+
+      // Логирование: отправка и управление окном логов
+      appendLog: (line: string) => void;
+      openLogWindow: () => Promise<boolean>;
+      exportLog: (suggestedName?: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
+      onLogContent: (cb: (event: any, content: string) => void) => () => void;
+      onLogAppend: (cb: (event: any, line: string) => void) => () => void;
+      onSetTheme: (cb: (event: any, isDark: boolean) => void) => () => void;
+
+      onUpdateAvailable: (cb: (event: any, version: string) => void) => () => void;
+      onUpdateNotAvailable: (cb: (event: any) => void) => () => void;
+      onUpdateError: (cb: (event: any, error: string) => void) => () => void;
+      onUpdateDownloadProgress: (cb: (event: any, percent: number) => void) => () => void;
+      onUpdateDownloaded: (cb: (event: any, version: string) => void) => () => void;
+      onMergeProgress: (cb: (event: any, payload: any) => void) => () => void;
+      onMergeComplete: (cb: (event: any, payload: any) => void) => () => void;
+    };
   }
 }
 
-type UpdateEventCallbacks = {
-  onUpdateAvailable: (callback: (event: any, version: string) => void) => () => void;
-  onUpdateNotAvailable: (callback: (event: any) => void) => () => void;
-  onUpdateError: (callback: (event: any, error: string) => void) => () => void;
-  onUpdateDownloadProgress: (callback: (event: any, percent: number) => void) => () => void;
-  onUpdateDownloaded: (callback: (event: any, version: string) => void) => () => void;
-  onUpdateInstalling: (callback: (event: any) => void) => () => void;
-};
-
-
-// Пустой export делает файл модулем
 export {};

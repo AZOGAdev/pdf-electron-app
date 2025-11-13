@@ -1,414 +1,572 @@
-// src/main.ts
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
+import { promises as fsp } from 'fs';
 import { PDFDocument } from 'pdf-lib';
-import { promises as fsPromises } from 'fs';
-import { Dirent } from 'fs';
 import { autoUpdater } from 'electron-updater';
+import { Document, Packer, Paragraph, TextRun, LevelFormat, AlignmentType } from 'docx';
 
-// --- Глобальные переменные ---
-let isQuitting = false;
+// Короткие комментарии: основные функции main.
+// preload -> main: preload пробрасывает invoke/on к main ipc.
+// main отправляет события (merge-progress, merge-complete, log-append) в renderer через webContents.send.
+
+const PREFIXES = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
+const CODE_REGEX = new RegExp(`(${PREFIXES.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})-\\d+(?:\\.\\d+)?`, 'i');
+
 let mainWindow: BrowserWindow | null = null;
-let updateDownloaded = false;
-let lastSelectedFolder: string | null = null; // <-- Запоминаем последнюю папку
+let logWindow: BrowserWindow | null = null;
+let isQuitting = false;
+let lastSelectedFolder: string | null = null;
+const logStore: string[] = [];
 
-// --- Вспомогательные функции для PDF ---
+// Флаг отмены текущего слияния. Устанавливается через ipc 'cancel-merge'.
+let mergeCancelRequested = false;
 
-// ✅ Извлекает код уведомления (учитывает имя файла и имя папки)
-const extractNotificationCode = (filePath: string): string | null => {
-  const prefixes = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
-  const prefixPattern = prefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const pattern = new RegExp(`(${prefixPattern})-\\d+(?:\\.\\d+)?`, 'i');
+/* Проверка, помечен ли файл как уже обработанный */
+const fileMarkedProcessed = (name: string) =>
+  /(\(.*?(с увед|с уведомл|with notification).*?\)|\bс увед\b|\bс уведомл\b|\bwith notification\b|\bобъединен\b|\bprocessed\b)/i.test(name);
 
-  const filename = path.basename(filePath);
-  const foldername = path.basename(path.dirname(filePath));
-
-  // 1. Пробуем найти конструкцию прямо в имени файла
-  let match = filename.match(pattern);
-  if (match) return match[0].toUpperCase();
-
-  // 2. Если нет — пробуем использовать имя папки как префикс
-  const folderPrefix = prefixes.find(p => foldername.toUpperCase().includes(p));
+/* Извлечь код уведомления из имени файла или папки */
+const extractNotificationCode = (fullPath: string): string | null => {
+  const filename = path.basename(fullPath);
+  const foldername = path.basename(path.dirname(fullPath));
+  const m = filename.match(CODE_REGEX);
+  if (m) return m[0].toUpperCase();
+  const folderPrefix = PREFIXES.find(p => foldername.toUpperCase().includes(p));
   if (folderPrefix) {
-    const numMatch = filename.match(/\d+(?:\.\d+)?/);
-    if (numMatch) return `${folderPrefix}-${numMatch[0]}`.toUpperCase();
+    const nm = filename.match(/\d+(?:\.\d+)?/);
+    if (nm) return `${folderPrefix}-${nm[0]}`.toUpperCase();
   }
-
   return null;
 };
 
-// ✅ Извлекает код из имени ЗЭПБ
+/* Извлечь код ЗЭПБ из имени файла */
 const extractZepbCode = (filename: string): string | null => {
-  const prefixes = ["СК", "УА", "СППК", "СПД", "РВС", "ПУ", "П", "ГЗУ"];
-  const prefixPattern = prefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const pattern = new RegExp(`(${prefixPattern})-\\d+(?:\\.\\d+)?`, 'i');
-  const match = filename.match(pattern);
-  return match ? match[0].toUpperCase() : null;
+  const m = filename.match(CODE_REGEX);
+  return m ? m[0].toUpperCase() : null;
 };
 
-// Проверка, был ли файл уже объединён
-const isAlreadyProcessed = (filename: string): boolean => {
-  const patterns = [
-    /\(с увед\)/i, /\(с уведомл\)/i, /с увед/i,
-    /\(with notification\)/i, /объединен/i, /processed/i
+/* Сканирование папки и построение словаря код->путь */
+async function buildDict(root: string, recursive: boolean, fileFilter: (full: string, name: string) => boolean, extractCode: (nameOrPath: string) => string | null) {
+  const dict: Record<string, string> = {};
+  async function scan(dir: string) {
+    let items;
+    try { items = await fsp.readdir(dir, { withFileTypes: true }); }
+    catch { return; }
+    for (const it of items) {
+      const full = path.join(dir, it.name);
+      if (it.isDirectory()) {
+        if (recursive) await scan(full);
+        continue;
+      }
+      if (!it.isFile()) continue;
+      if (!fileFilter(full, it.name)) continue;
+      if (fileMarkedProcessed(it.name)) continue;
+      const code = extractCode(it.name);
+      if (!code) continue;
+      if (dict[code]) {
+        try {
+          const [s1, s2] = await Promise.all([fsp.stat(dict[code]), fsp.stat(full)]);
+          if (s2.mtimeMs > s1.mtimeMs) dict[code] = full;
+        } catch { /* ignore */ }
+        continue;
+      }
+      dict[code] = full;
+    }
+  }
+  await scan(root);
+  return dict;
+}
+
+/* Создание .docx реестра: Times New Roman, нумерованный список */
+async function createRegistryDocx(outputFolder: string, processedFiles: string[]) {
+  if (!processedFiles.length) return null;
+  const now = new Date();
+  const formatted = now.toLocaleString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+  const numberingConfig = [
+    {
+      reference: 'num-ref',
+      levels: [
+        {
+          level: 0,
+          format: LevelFormat.DECIMAL,
+          text: '%1.',
+          alignment: AlignmentType.START,
+        },
+      ],
+    },
   ];
-  const filenameLower = filename.toLowerCase();
-  return patterns.some(p => p.test(filenameLower));
-};
 
-// --- Строим словари уведомлений и ЗЭПБ ---
-const buildInsertDict = async (rootFolder: string, recursive: boolean): Promise<Record<string, string>> => {
-    const insertDict: Record<string, string> = {};
-    const skipped: string[] = [];
+  const children: Paragraph[] = [];
+  children.push(new Paragraph({ children: [new TextRun({ text: 'Реестр обработанных файлов', bold: true, size: 28, font: 'Times New Roman' })] }));
+  children.push(new Paragraph({ text: '' }));
 
-    const scanDir = async (dir: string) => {
-        const items = await fsPromises.readdir(dir, { withFileTypes: true });
-        for (const item of items) {
-            const fullPath = path.join(dir, item.name);
-            if (item.isDirectory() && recursive) {
-                await scanDir(fullPath);
-            } else if (item.isFile() && fullPath.toLowerCase().endsWith('.pdf')) {
-                const fileName = path.basename(fullPath);
-                if (isAlreadyProcessed(fileName)) {
-                    skipped.push(fileName);
-                    continue;
-                }
-                const code = extractNotificationCode(fullPath);
-                if (code && !insertDict[code]) {
-                    insertDict[code] = fullPath;
-                }
-            }
+  for (const fname of processedFiles) {
+    children.push(new Paragraph({
+      numbering: { reference: 'num-ref', level: 0 },
+      children: [new TextRun({ text: fname, size: 24, font: 'Times New Roman' })],
+    }));
+  }
+
+  children.push(new Paragraph({ text: '' }));
+  children.push(new Paragraph({ children: [new TextRun({ text: `Дата обработки: ${formatted}`, italics: true, size: 24, font: 'Times New Roman' })] }));
+
+  const doc = new Document({ numbering: { config: numberingConfig }, sections: [{ properties: {}, children }] });
+  const buffer = await Packer.toBuffer(doc);
+  const safeDate = now.toISOString().replace(/[:.]/g, '-').slice(0, 16);
+  const filename = `Реестр обработанных файлов ${safeDate}.docx`;
+  const outPath = path.join(outputFolder, filename);
+  await fsp.writeFile(outPath, buffer);
+  return filename;
+}
+
+let currentThemeIsDark = false; // текущее состояние темы (renderer сообщает main)
+
+/* IPC: принять изменение темы от renderer и форвардить в окно логов */
+ipcMain.on('theme-changed', (_e, isDark: boolean) => {
+  currentThemeIsDark = !!isDark;
+  if (logWindow && !logWindow.isDestroyed()) {
+    logWindow.webContents.send('set-theme', currentThemeIsDark);
+  }
+});
+
+// Замените существующую функцию createLogWindow на этот вариант.
+// Он копирует styles.css, вставляет его, затем синхронизирует CSS-переменные
+// из mainWindow в logWindow, и только в крайнем случае применяет fallback CSS.
+
+import { pathToFileURL } from 'url'; // убедитесь, что импорт есть вверху файла
+
+function createLogWindow() {
+  if (logWindow && !logWindow.isDestroyed()) return;
+  logWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true },
+    title: 'Лог приложения',
+  });
+
+  const htmlPath = path.join(__dirname, 'logWindow.html');
+  logWindow.loadFile(htmlPath).catch(err => {
+    console.error('Ошибка загрузки logWindow.html:', err);
+    logStore.push(`[ERROR] Ошибка загрузки logWindow.html: ${(err as Error).message}`);
+  });
+
+  logWindow.on('closed', () => { logWindow = null; });
+
+  logWindow.webContents.once('did-finish-load', async () => {
+    try {
+      // 1) Отправляем текущий лог и тему
+      logWindow?.webContents.send('log-content', logStore.join('\n'));
+      logWindow?.webContents.send('set-theme', currentThemeIsDark);
+
+      // 2) Найти styles.css (dist предпочтительно)
+      const candidates = [
+        path.join(__dirname, 'styles.css'),              // dist/styles.css
+        path.join(process.cwd(), 'dist', 'styles.css'), // альтернатива
+        path.join(process.cwd(), 'src', 'styles.css'),  // исходник (dev)
+      ];
+
+      let cssPath: string | null = null;
+      for (const p of candidates) {
+        if (await fs.pathExists(p)) { cssPath = p; break; }
+      }
+
+      if (cssPath) {
+        // вставляем внешний CSS в окно логов
+        try {
+          const css = await fsp.readFile(cssPath, 'utf8');
+          await logWindow!.webContents.insertCSS(css);
+          logStore.push(`[DEBUG] insertCSS applied for ${cssPath}`);
+        } catch (err) {
+          console.warn('[logWindow] insertCSS failed:', (err as Error).message);
+          logStore.push(`[WARN] insertCSS failed: ${(err as Error).message}`);
         }
-    };
 
-    await scanDir(rootFolder);
-
-    if (skipped.length) {
-        console.log(`⏭️ Пропущенные уведомления: ${skipped.join(', ')}`);
-    }
-
-    return insertDict;
-};
-
-const buildZepbDict = async (rootFolder: string, recursive: boolean): Promise<Record<string, string>> => {
-    const zepbDict: Record<string, string> = {};
-    const skipped: string[] = [];
-
-    const scanDir = async (dir: string) => {
-        const items = await fsPromises.readdir(dir, { withFileTypes: true });
-        for (const item of items) {
-            const fullPath = path.join(dir, item.name);
-            if (item.isDirectory() && recursive) {
-                await scanDir(fullPath);
-            } else if (item.isFile() && fullPath.toLowerCase().endsWith('.pdf') && fullPath.toLowerCase().includes('зэпб')) {
-                const fileName = path.basename(fullPath);
-                if (isAlreadyProcessed(fileName)) {
-                    skipped.push(fileName);
-                    continue;
-                }
-                const code = extractZepbCode(fileName);
-                if (code && !zepbDict[code]) {
-                    zepbDict[code] = fullPath;
-                }
-            }
+        // добавляем <link> с file:// для относительных ресурсов (шрифты и пр.)
+        try {
+          const cssFileUrl = pathToFileURL(cssPath).href;
+          await logWindow!.webContents.executeJavaScript(`
+            (function(){
+              if (!document.querySelector('link[data-injected-styles]')) {
+                const l = document.createElement('link');
+                l.rel = 'stylesheet';
+                l.href = ${JSON.stringify(cssFileUrl)};
+                l.setAttribute('data-injected-styles', '1');
+                document.head.appendChild(l);
+              }
+              return true;
+            })();
+          `, true);
+          logStore.push(`[DEBUG] <link> injected: ${cssPath}`);
+        } catch (err) {
+          console.warn('[logWindow] insert <link> failed:', (err as Error).message);
+          logStore.push(`[WARN] insert <link> failed: ${(err as Error).message}`);
         }
-    };
+      } else {
+        const warn = `styles.css не найден (пытались: ${candidates.join(', ')})`;
+        console.warn('[logWindow] ' + warn);
+        logStore.push(`[WARN] ${warn}`);
+      }
 
-    await scanDir(rootFolder);
+      // 3) Синхронизировать CSS-переменные из mainWindow в logWindow
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          // получить все переменные --* из mainWindow
+          const vars: Record<string, string> = await mainWindow.webContents.executeJavaScript(`
+            (function(){
+              try {
+                const cs = getComputedStyle(document.documentElement);
+                const out = {};
+                for (let i = 0; i < cs.length; i++) {
+                  const name = cs[i];
+                  if (name && name.startsWith('--')) {
+                    out[name] = cs.getPropertyValue(name).trim();
+                  }
+                }
+                return out;
+              } catch (e) { return {}; }
+            })();
+          `, true);
 
-    if (skipped.length) {
-        console.log(`⏭️ Пропущенные ЗЭПБ: ${skipped.join(', ')}`);
+          // сформировать CSS :root { --var: value; ... }
+          const varsEntries = Object.entries(vars);
+          if (varsEntries.length) {
+            let varsCss = ':root {\\n';
+            for (const [k, v] of varsEntries) {
+              // экранируем одинарные слэши и кавычки на всякий
+              const safeV = String(v).replace(/\\/g, '\\\\').replace(/\$/g, '\\$');
+              varsCss += `  ${k}: ${safeV};\\n`;
+            }
+            varsCss += '}';
+            try {
+              await logWindow!.webContents.insertCSS(varsCss);
+              logStore.push('[DEBUG] CSS variables synced to logWindow');
+            } catch (err) {
+              console.warn('[logWindow] failed to insert CSS vars:', (err as Error).message);
+              logStore.push(`[WARN] failed to insert CSS vars: ${(err as Error).message}`);
+            }
+            // повторно отправим тему (чтобы переменные применились)
+            logWindow?.webContents.send('set-theme', currentThemeIsDark);
+          } else {
+            logStore.push('[DEBUG] No CSS variables found in mainWindow to sync');
+          }
+        } else {
+          logStore.push('[DEBUG] mainWindow not available for CSS var sync');
+        }
+      } catch (err) {
+        console.warn('[logWindow] error syncing CSS vars from mainWindow:', (err as Error).message);
+        logStore.push(`[WARN] error syncing CSS vars: ${(err as Error).message}`);
+      }
+
+      // 4) Диагностика и fallback (как страховка)
+      const diag = await logWindow!.webContents.executeJavaScript(`
+        (function(){
+          try {
+            const sheets = document.styleSheets ? document.styleSheets.length : 0;
+            const btn = document.querySelector('.btn') || document.querySelector('button') || document.body;
+            const computed = btn ? window.getComputedStyle(btn) : null;
+            const bg = computed ? computed.backgroundColor : null;
+            const color = computed ? computed.color : null;
+            const hasLink = !!document.querySelector('link[data-injected-styles]');
+            return { sheets, bg, color, hasLink };
+          } catch (e) { return { error: e && e.message }; }
+        })();
+      `, true);
+
+      logStore.push(`[DEBUG] logWindow diag: ${JSON.stringify(diag)}`);
+
+      const needFallback = !diag || diag.sheets === 0 || !diag.bg || diag.bg === 'rgba(0, 0, 0, 0)' || diag.bg === 'transparent';
+      if (needFallback) {
+        const fallbackCss = `
+          :root { --bg: #ffffff; --text: #111827; --panel: #f9fafb; --border: #e5e7eb; --btn-bg: #3b82f6; --btn-text: #fff; --muted: #6b7280; }
+          [data-theme="dark"] { --bg: #0b1220; --text: #e5e7eb; --panel: #111827; --border: #374151; --btn-bg: #2563eb; --btn-text: #fff; --muted: #9ca3af; }
+          html,body { background:var(--bg); color:var(--text); font-family: Inter, system-ui, Arial; }
+          .wrap { padding:12px; box-sizing:border-box; height:100%; display:flex; flex-direction:column; gap:12px; }
+          .btn { padding:8px 12px; border-radius:8px; border:1px solid var(--border); cursor:pointer; background:var(--panel) !important; color:var(--text) !important; }
+          .btn.primary { background:var(--btn-bg) !important; color:var(--btn-text) !important; border:none !important; }
+          .filters { display:flex; gap:8px; align-items:center; }
+          .log { flex:1; width:100%; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-family:monospace; font-size:13px; overflow:auto; white-space:pre-wrap; }
+          .search { padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--panel); }
+          .small { color:var(--muted); font-size:12px; }
+        `;
+        try {
+          await logWindow!.webContents.insertCSS(fallbackCss);
+          logStore.push('[DEBUG] fallback CSS inserted into logWindow');
+          logWindow?.webContents.send('set-theme', currentThemeIsDark);
+        } catch (err) {
+          console.error('[logWindow] failed to insert fallback CSS:', (err as Error).message);
+          logStore.push(`[ERROR] failed to insert fallback CSS: ${(err as Error).message}`);
+        }
+      }
+    } catch (err) {
+      console.error('[main] Ошибка при инициализации окна логов:', err);
+      logStore.push(`[ERROR] Ошибка инициализации окна логов: ${(err as Error).message}`);
     }
+  });
+}
 
-    return zepbDict;
-};
+/* IPC: открыть окно логов */
+ipcMain.handle('open-log-window', async () => {
+  createLogWindow();
+  return true;
+});
 
-// --- Основное объединение PDF ---
-const mergePDFs = async (
-  mainFolder: string,
-  insertFolder: string,
-  outputFolder: string,
-  recursiveMain: boolean,
-  recursiveInsert: boolean
-): Promise<{ processed: number; skipped: number; errors: string[]; log: string[]; total: number }> => {
+/* IPC: экспорт логов в файл */
+ipcMain.handle('export-log', async (_e, suggestedName?: string) => {
+  const defaultName = suggestedName || `pdfmanager-log-${new Date().toISOString().slice(0,19).replace(/[:.]/g, '-')}.txt`;
+  const { filePath, canceled } = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow()!, {
+    defaultPath: defaultName,
+    filters: [{ name: 'Text', extensions: ['txt', 'log'] }],
+  });
+  if (canceled || !filePath) return { ok: false };
+  try {
+    await fsp.writeFile(filePath, logStore.join('\n'), { encoding: 'utf8' });
+    return { ok: true, path: filePath };
+  } catch (err) {
+    console.error('Export log error:', err);
+    return { ok: false, error: (err as Error).message };
+  }
+});
 
-  const insertDict = await buildInsertDict(insertFolder, recursiveInsert);
-  const zepbDict = await buildZepbDict(mainFolder, recursiveMain);
+/* IPC: главный приёмник логов из renderer, форвардим в окно логов и сохраняем в logStore */
+ipcMain.on('append-log', (_e, message: string) => {
+  const line = typeof message === 'string' ? message : JSON.stringify(message);
+  logStore.push(line);
+  if (logWindow && !logWindow.isDestroyed()) {
+    logWindow.webContents.send('log-append', line);
+  }
+});
 
-  const results = { processed: 0, skipped: 0, errors: [] as string[], log: [] as string[], total: 0 };
-  results.total = Object.keys(insertDict).length;
+/* IPC: отмена текущего мерджа */
+ipcMain.handle('cancel-merge', async () => {
+  mergeCancelRequested = true;
+  // если нужно, можно вернуть текущее состояние
+  return true;
+});
 
-  for (const [notifCode, notifPath] of Object.entries(insertDict)) {
-    let matchingZepbPath: string | undefined = undefined;
-    let matchingZepbName: string = '';
+/* Основной обработчик объединения */
+ipcMain.handle('merge-pdfs', async (_event, { mainFolder, insertFolder, outputFolder, recursiveMain, recursiveInsert }: any) => {
+  const summary = { processed: 0, skipped: 0, errors: [] as string[], log: [] as string[], total: 0, canceled: false as boolean };
+  try {
+    if (!mainFolder || !insertFolder || !outputFolder) throw new Error('Не указаны папки');
+    await fs.ensureDir(outputFolder);
 
-    for (const [zepbCode, zepbPath] of Object.entries(zepbDict)) {
-      if (zepbCode === notifCode) {
-        matchingZepbPath = zepbPath;
-        matchingZepbName = path.basename(zepbPath);
+    // сбрасываем флаг отмены перед началом
+    mergeCancelRequested = false;
+
+    const insertDict = await buildDict(insertFolder, !!recursiveInsert, (full) => full.toLowerCase().endsWith('.pdf'), extractNotificationCode);
+    const zepbDict = await buildDict(mainFolder, !!recursiveMain, (full, name) => full.toLowerCase().endsWith('.pdf') && name.toLowerCase().includes('зэпб'), extractZepbCode);
+
+    const keys = Object.keys(insertDict);
+    summary.total = keys.length;
+    const processedNames: string[] = [];
+
+    for (let i = 0; i < keys.length; i++) {
+      // проверяем флаг отмены в начале каждой итерации
+      if (mergeCancelRequested) {
+        const cancelMsg = 'Операция объединения отменена пользователем';
+        summary.log.push(cancelMsg);
+        summary.canceled = true;
+        mainWindow?.webContents.send('merge-progress', {
+          processed: summary.processed,
+          skipped: summary.skipped,
+          total: summary.total,
+          current: i + 1,
+          message: cancelMsg
+        });
+        logStore.push(cancelMsg);
+        if (logWindow) logWindow.webContents.send('log-append', cancelMsg);
         break;
       }
-    }
 
-    if (!matchingZepbPath) {
-      const msg = `⚠️ Не найден ЗЭПБ для уведомления: ${path.basename(notifPath)} (${notifCode})`;
-      results.log.push(msg);
-      results.skipped += 1;
-      continue;
-    }
+      const code = keys[i];
+      const notifPath = insertDict[code];
+      const zepbPath = zepbDict[code];
+      const index = i + 1;
 
-    try {
-      if (isAlreadyProcessed(matchingZepbName)) {
-        const msg = `⏭️ Пропущен уже обработанный ЗЭПБ: ${matchingZepbName}`;
-        results.log.push(msg);
-        results.skipped += 1;
+      if (!zepbPath) {
+        const msg = `Не найден ЗЭПБ для уведомления: ${path.basename(notifPath)} (${code})`;
+        summary.log.push(msg);
+        summary.skipped++;
+        mainWindow?.webContents.send('merge-progress', { processed: summary.processed, skipped: summary.skipped, total: summary.total, current: index, code, message: msg });
+        logStore.push(msg);
+        if (logWindow) logWindow.webContents.send('log-append', msg);
         continue;
       }
 
-      // Загружаем и объединяем PDF
-      const notifPdfBytes = await fs.readFile(notifPath);
-      const notifPdfDoc = await PDFDocument.load(notifPdfBytes);
+      if (fileMarkedProcessed(path.basename(zepbPath))) {
+        const msg = `Пропущен уже обработанный ЗЭПБ: ${path.basename(zepbPath)}`;
+        summary.log.push(msg);
+        summary.skipped++;
+        mainWindow?.webContents.send('merge-progress', { processed: summary.processed, skipped: summary.skipped, total: summary.total, current: index, code, message: msg });
+        logStore.push(msg);
+        if (logWindow) logWindow.webContents.send('log-append', msg);
+        continue;
+      }
 
-      const zepbPdfBytes = await fs.readFile(matchingZepbPath);
-      const zepbPdfDoc = await PDFDocument.load(zepbPdfBytes);
-
-      const mergedPdfDoc = await PDFDocument.create();
-
-      // Сначала уведомление, потом ЗЭПБ
-      const notifPages = await mergedPdfDoc.copyPages(notifPdfDoc, notifPdfDoc.getPageIndices());
-      notifPages.forEach(page => mergedPdfDoc.addPage(page));
-
-      const zepbPages = await mergedPdfDoc.copyPages(zepbPdfDoc, zepbPdfDoc.getPageIndices());
-      zepbPages.forEach(page => mergedPdfDoc.addPage(page));
-
-      const baseName = path.basename(matchingZepbPath, '.pdf');
-      const cleanBaseName = baseName
-        .replace(/\s*\(с увед.*?\)\s*$/i, '')
-        .replace(/\s*с увед.*?$/i, '');
-      const outputFilename = `${cleanBaseName} (с увед).pdf`;
-      const outputPath = path.join(outputFolder, outputFilename);
-
-      const mergedPdfBytes = await mergedPdfDoc.save();
-      await fs.writeFile(outputPath, mergedPdfBytes);
-
-      const msg = `✅ Объединено: ${outputFilename}`;
-      results.log.push(msg);
-      results.processed += 1;
-
-    } catch (err) {
-      const errorMsg = `❌ Ошибка при обработке ${notifCode}: ${(err as Error).message}`;
-      results.log.push(errorMsg);
-      results.errors.push(errorMsg);
-      results.skipped += 1;
-      console.error(errorMsg);
+      try {
+        const [notifBuf, zepbBuf] = await Promise.all([fsp.readFile(notifPath), fsp.readFile(zepbPath)]);
+        const [notifDoc, zepbDoc] = await Promise.all([PDFDocument.load(notifBuf), PDFDocument.load(zepbBuf)]);
+        const merged = await PDFDocument.create();
+        const notifPages = await merged.copyPages(notifDoc, notifDoc.getPageIndices());
+        notifPages.forEach(p => merged.addPage(p));
+        const zepbPages = await merged.copyPages(zepbDoc, zepbDoc.getPageIndices());
+        zepbPages.forEach(p => merged.addPage(p));
+        const base = path.basename(zepbPath, '.pdf').replace(/\s*\(с увед.*?\)\s*$/i, '').replace(/\s*с увед.*?$/i, '');
+        const outName = `${base} (с увед).pdf`;
+        const outPath = path.join(outputFolder, outName);
+        const mergedBuf = await merged.save();
+        await fsp.writeFile(outPath, mergedBuf);
+        summary.processed++;
+        processedNames.push(outName);
+        const msg = `Объединено: ${outName}`;
+        summary.log.push(msg);
+        mainWindow?.webContents.send('merge-progress', { processed: summary.processed, skipped: summary.skipped, total: summary.total, current: index, code, outputFilename: outName, message: msg });
+        logStore.push(msg);
+        if (logWindow) logWindow.webContents.send('log-append', msg);
+      } catch (err) {
+        const em = `Ошибка при обработке ${code}: ${(err as Error).message}`;
+        summary.errors.push(em);
+        summary.log.push(em);
+        summary.skipped++;
+        mainWindow?.webContents.send('merge-progress', { processed: summary.processed, skipped: summary.skipped, total: summary.total, current: index, code, message: em });
+        logStore.push(em);
+        if (logWindow) logWindow.webContents.send('log-append', em);
+      }
     }
+
+    // если операция была отменена, всё равно создаём реестр для уже обработанных файлов (опционально).
+    const registryName = await createRegistryDocx(outputFolder, processedNames);
+    if (registryName) {
+      summary.log.push(`Создан реестр: ${registryName}`);
+      logStore.push(`Создан реестр: ${registryName}`);
+      if (logWindow) logWindow.webContents.send('log-append', `Создан реестр: ${registryName}`);
+    }
+
+    const finishedMsg = {
+      processed: summary.processed,
+      skipped: summary.skipped,
+      total: summary.total,
+      errors: summary.errors,
+      log: summary.log,
+      registry: registryName || null,
+      canceled: summary.canceled
+    };
+
+    mainWindow?.webContents.send('merge-complete', finishedMsg);
+    if (logWindow) logWindow.webContents.send('merge-complete', finishedMsg);
+
+    return summary;
+  } catch (err) {
+    const em = `Ошибка объединения: ${(err as Error).message}`;
+    summary.errors.push(em);
+    summary.log.push(em);
+    logStore.push(em);
+    mainWindow?.webContents.send('merge-complete', { processed: summary.processed, skipped: summary.skipped, total: summary.total, errors: summary.errors, log: summary.log, registry: null, canceled: false });
+    if (logWindow) logWindow.webContents.send('merge-complete', { processed: summary.processed, skipped: summary.skipped, total: summary.total, errors: summary.errors, log: summary.log, registry: null, canceled: false });
+    return summary;
   }
-
-  return results;
-};
-
-// --- IPC Handlers ---
-ipcMain.handle('select-folder', async (event, defaultPath?: string) => {
-    const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow()!, {
-        properties: ['openDirectory'],
-        defaultPath: defaultPath && fs.existsSync(defaultPath) ? defaultPath : undefined,
-    });
-
-    if (!result.canceled && result.filePaths.length > 0) {
-        lastSelectedFolder = result.filePaths[0];
-        return lastSelectedFolder;
-    }
-    return null;
 });
 
+/* Диалог выбора папки */
+ipcMain.handle('select-folder', async (_event, defaultPath?: string) => {
+  const startPath = defaultPath && await fs.pathExists(defaultPath) ? defaultPath : (lastSelectedFolder && await fs.pathExists(lastSelectedFolder) ? lastSelectedFolder : undefined);
+  const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow()!, { properties: ['openDirectory'], defaultPath: startPath });
+  if (!result.canceled && result.filePaths.length) {
+    lastSelectedFolder = result.filePaths[0];
+    return lastSelectedFolder;
+  }
+  return null;
+});
+
+/* Загрузка/сохранение настроек (settings.json в userData) */
 ipcMain.handle('load-settings', async () => {
   const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-  try {
-    if (await fs.pathExists(settingsPath)) {
-      return await fs.readJson(settingsPath);
-    }
-  } catch (error) {
-    console.error('Error loading settings:', error);
-  }
+  try { if (await fs.pathExists(settingsPath)) return await fs.readJson(settingsPath); } catch (err) { console.error('Error loading settings:', err); }
   return {};
 });
 
-ipcMain.handle('save-settings', async (event, settings) => {
+ipcMain.handle('save-settings', async (_e, settings) => {
   const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-  try {
-    await fs.writeJson(settingsPath, settings, { spaces: 2 });
-    return true;
-  } catch (error) {
-    console.error('Error saving settings:', error);
-    return false;
-  }
+  try { await fs.writeJson(settingsPath, settings, { spaces: 2 }); return true; } catch (err) { console.error('Error saving settings:', err); return false; }
 });
 
-ipcMain.handle('merge-pdfs', async (event, { mainFolder, insertFolder, outputFolder, recursiveMain, recursiveInsert }) => {
-  try {
-    return await mergePDFs(mainFolder, insertFolder, outputFolder, recursiveMain, recursiveInsert);
-  } catch (error) {
-    console.error('Error during PDF merge:', error);
-    return { error: (error as Error).message, processed: 0, skipped: 0, errors: [(error as Error).message], log: [`❌ Ошибка выполнения: ${(error as Error).message}`], total: 0 };
-  }
+/* Прочие handlers */
+ipcMain.handle('build-dict', async (_e, type: 'zepb' | 'insert', folderPath: string, recursive: boolean) => {
+  try { return type === 'zepb' ? await buildDict(folderPath, recursive, (f, n) => f.toLowerCase().endsWith('.pdf') && n.toLowerCase().includes('зэпб'), extractZepbCode) : await buildDict(folderPath, recursive, (f) => f.toLowerCase().endsWith('.pdf'), extractNotificationCode); } catch { return {}; }
 });
 
-ipcMain.handle('open-folder', async (event, folderPath) => {
-  try {
-    await shell.openPath(folderPath);
-    return true;
-  } catch (error) {
-    console.error('Error opening folder:', error);
-    return false;
-  }
+ipcMain.handle('count-files-in-folder', async (_e, folderPath: string) => {
+  const items = await fsp.readdir(folderPath, { withFileTypes: true });
+  return items.filter(i => i.isFile()).length;
 });
 
-ipcMain.handle('build-dict', async (event, type: 'zepb' | 'insert', folderPath: string, recursive: boolean) => {
-  try {
-    return type === 'zepb'
-      ? await buildZepbDict(folderPath, recursive)
-      : await buildInsertDict(folderPath, recursive);
-  } catch (error) {
-    console.error(`Error building ${type} dict:`, error);
-    return {};
-  }
+ipcMain.handle('open-folder', async (_e, folderPath: string) => {
+  try { await shell.openPath(folderPath); return true; } catch { return false; }
 });
 
-ipcMain.handle('count-files-in-folder', async (event, folderPath: string) => {
+ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder }) => {
   try {
-    const items = await fs.readdir(folderPath);
-    const files = items.filter(item => fs.statSync(path.join(folderPath, item)).isFile());
-    return files.length;
-  } catch (error) {
-    console.error(`Error counting files in folder ${folderPath}:`, error);
-    throw error;
-  }
-});
-
-// --- Автообновления ---
-ipcMain.handle('check-for-updates', async () => {
-  try {
-    autoUpdater.checkForUpdates();
-    return null;
-  } catch (error) {
-    console.error('Error checking for updates:', error);
-    mainWindow?.webContents.send('update-error', (error as Error).message);
-    return null;
-  }
-});
-
-ipcMain.handle('download-update', async () => {
-  try {
-    await autoUpdater.downloadUpdate();
-    return true;
-  } catch (error) {
-    console.error('Error downloading update:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('compress-pdfs', async (event, { inputFolder, outputFolder }) => {
-  try {
-    const files = await fsPromises.readdir(inputFolder);
-    const pdfFiles = files.filter(f => f.toLowerCase().endsWith('.pdf'));
-
+    const files = await fsp.readdir(inputFolder);
+    const pdfs = files.filter(f => f.toLowerCase().endsWith('.pdf'));
+    await fs.ensureDir(outputFolder);
     let processed = 0;
-    for (const file of pdfFiles) {
-      const inputPath = path.join(inputFolder, file);
-      const outputPath = path.join(outputFolder, file);
-      const pdfBytes = await fs.readFile(inputPath);
-      const pdfDoc = await PDFDocument.load(pdfBytes);
-      const newPdfBytes = await pdfDoc.save({ useObjectStreams: true });
-      await fs.writeFile(outputPath, newPdfBytes);
+    for (const f of pdfs) {
+      const inP = path.join(inputFolder, f);
+      const outP = path.join(outputFolder, f);
+      const buf = await fsp.readFile(inP);
+      const doc = await PDFDocument.load(buf);
+      const newBuf = await doc.save({ useObjectStreams: true });
+      await fsp.writeFile(outP, newBuf);
       processed++;
     }
-
-    return { processed, total: pdfFiles.length, log: [`✅ Сжато ${processed} файлов.`] };
+    return { processed, total: pdfs.length, log: [`Сжато ${processed} файлов.`] };
   } catch (err) {
-    console.error(err);
-    return { processed: 0, total: 0, log: [`❌ Ошибка: ${(err as Error).message}`] };
+    return { processed: 0, total: 0, log: [`Ошибка: ${(err as Error).message}`] };
   }
 });
 
-ipcMain.handle('quit-and-install', () => {
-  console.log('Received quit-and-install command from renderer.');
-  isQuitting = true;
-  autoUpdater.quitAndInstall();
-});
+/* Обновления и инфо */
+ipcMain.handle('check-for-updates', async () => { try { autoUpdater.checkForUpdates(); } catch (e) { mainWindow?.webContents.send('update-error', (e as Error).message); } });
+ipcMain.handle('download-update', async () => { try { await autoUpdater.downloadUpdate(); return true; } catch { return false; } });
+ipcMain.handle('quit-and-install', () => { isQuitting = true; autoUpdater.quitAndInstall(); });
+ipcMain.handle('get-app-info', async () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch }));
+ipcMain.handle('open-external-url', async (_e, url: string) => { await shell.openExternal(url); return true; });
 
-ipcMain.handle('get-app-info', async () => ({
-  version: app.getVersion(),
-  platform: process.platform,
-  arch: process.arch,
-}));
+autoUpdater.on('update-available', (info) => { if (info.version !== app.getVersion()) mainWindow?.webContents.send('update-available', info.version); else mainWindow?.webContents.send('update-not-available'); });
+autoUpdater.on('update-not-available', () => mainWindow?.webContents.send('update-not-available'));
+autoUpdater.on('error', (err) => mainWindow?.webContents.send('update-error', (err as Error).message));
+autoUpdater.on('download-progress', (p) => mainWindow?.webContents.send('update-download-progress', p.percent));
+autoUpdater.on('update-downloaded', (info) => mainWindow?.webContents.send('update-downloaded', info.version));
 
-ipcMain.handle('open-external-url', async (event, url: string) => {
-  try {
-    await shell.openExternal(url);
-    return true;
-  } catch (error) {
-    console.error(`Failed to open URL ${url}:`, error);
-    throw error;
-  }
-});
-
-// --- Обновления ---
-let updateAvailableVersion: string | null = null;
-
-autoUpdater.on('update-available', (info) => {
-  console.log(`Update available: ${info.version}`);
-  updateAvailableVersion = info.version;
-  const currentVersion = app.getVersion();
-  if (info.version !== currentVersion) {
-    mainWindow?.webContents.send('update-available', info.version);
-  } else {
-    mainWindow?.webContents.send('update-not-available');
-  }
-});
-
-autoUpdater.on('update-not-available', () => {
-  mainWindow?.webContents.send('update-not-available');
-});
-
-autoUpdater.on('error', (err) => {
-  console.error('Error in auto-updater:', err);
-  mainWindow?.webContents.send('update-error', err.message);
-});
-
-autoUpdater.on('download-progress', (progress) => {
-  mainWindow?.webContents.send('update-download-progress', progress.percent);
-});
-
-autoUpdater.on('update-downloaded', (info) => {
-  mainWindow?.webContents.send('update-downloaded', info.version);
-});
-
-// --- Окно приложения ---
+/* Создать главное окно */
 const createWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 900,
+    width: 1200,
     height: 750,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true },
     icon: path.join(__dirname, '../assets/icon.png'),
     autoHideMenuBar: true,
+    minWidth: 900
   });
-
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
   mainWindow.webContents.once('did-finish-load', () => autoUpdater.checkForUpdates());
+
+  // Закрывать окно логов при закрытии главного окна, чтобы не оставлять "плавающих" окон.
+  mainWindow.on('closed', () => {
+    if (logWindow && !logWindow.isDestroyed()) {
+      try { logWindow.close(); } catch { /* ignore */ }
+      logWindow = null;
+    }
+    mainWindow = null;
+  });
 };
 
 app.whenReady().then(() => {
   createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on('window-all-closed', () => {
-  if (!isQuitting && process.platform !== 'darwin') app.quit();
-});
+app.on('window-all-closed', () => { if (!isQuitting && process.platform !== 'darwin') app.quit(); });

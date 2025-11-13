@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "axios": "^1.13.2",
+    "docx": "^8.4.0",
     "electron-updater": "^6.6.2",
     "exceljs": "^4.4.0",
     "fs-extra": "^11.2.0",
@@ -52,6 +53,7 @@
       "src/assets/**/*",
       "src/styles.css",
       "src/index.html",
+      "src/logWindow.html",
       "assets/**/*"
     ],
     "win": {
