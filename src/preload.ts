@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Открыть внешний URL
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
+  onCompressProgress: (cb: (event: any, payload: any) => void) => { ipcRenderer.on('compress-progress', (_e, payload) => cb(null, payload)); return () => ipcRenderer.removeAllListeners('compress-progress'); },
+  onCompressComplete: (cb: (event: any, payload: any) => void) => { ipcRenderer.on('compress-complete', (_e, payload) => cb(null, payload)); return () => ipcRenderer.removeAllListeners('compress-complete'); },
 
   // Сжатие PDF (main)
   compressPDFs: (opts: { inputFolder: string, outputFolder: string, quality?: number }) => ipcRenderer.invoke('compress-pdfs', opts),

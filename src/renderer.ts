@@ -14,6 +14,7 @@ let lastSelectedOutputFolder: string | null = null;
 let lastSelectedCompress: string | null = null;
 let compressOutputFolder: string | null = null;
 let lastSelectedCompressOutputFolder: string | null = null;
+let lastReportPath: string | null = null;
 
 /* DOM элементы */
 const navMode1 = document.getElementById('nav-mode1') as HTMLButtonElement;
@@ -70,11 +71,14 @@ const btnDismissPopup = document.getElementById('btn-dismiss-popup') as HTMLButt
 
 /* Compress controls */
 const btnCompress = document.getElementById('btn-compress') as HTMLButtonElement | null;
-  const btnCompressOutput = document.getElementById('btn-compress-output') as HTMLButtonElement | null;
-  const btnCompressRun = document.getElementById('btn-compress-run') as HTMLButtonElement | null;
-  const labelCompress = document.getElementById('label-compress') as HTMLInputElement | null;
-  const labelCompressOutput = document.getElementById('label-compress-output') as HTMLInputElement | null;
-  const selectCompressQuality = document.getElementById('compress-quality') as HTMLSelectElement | null;
+const btnCompressOutput = document.getElementById('btn-compress-output') as HTMLButtonElement | null;
+const btnCompressRun = document.getElementById('btn-compress-run') as HTMLButtonElement | null;
+const labelCompress = document.getElementById('label-compress') as HTMLInputElement | null;
+const labelCompressOutput = document.getElementById('label-compress-output') as HTMLInputElement | null;
+const selectCompressQuality = document.getElementById('compress-quality') as HTMLSelectElement | null;
+const compressProgressFill = document.getElementById('compress-progress-fill') as HTMLDivElement | null;
+const compressTableBody = document.querySelector('#compress-table tbody') as HTMLTableSectionElement | null;
+const btnOpenReport = document.getElementById('btn-open-report') as HTMLButtonElement | null;
 
 /* Динамически создаём кнопку "Открыть лог", если её нет в DOM */
 (function ensureLogButton() {
@@ -125,6 +129,17 @@ const btnCompress = document.getElementById('btn-compress') as HTMLButtonElement
     }
   });
 })();
+
+// Очистка таблицы и прогресса перед новой обработкой
+function clearCompressTable() {
+  try {
+    if (compressTableBody) {
+      compressTableBody.innerHTML = '';
+      // гарантируем, что tbody остаётся display:block (см. стили)
+    }
+    if (compressProgressFill) compressProgressFill.style.width = '0%';
+  } catch (e) { console.error('clearCompressTable error', e); }
+}
 
 /* Логирование — локально и отправка в main (logStore) */
 const log = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -201,6 +216,7 @@ function updateCompressReady() {
     log(`Запущено сжатие: ${labelCompress.value} -> ${compressOutputFolder}, качество ${quality}%`, 'info');
     setBusy(true);
     try {
+      clearCompressTable();
       const res = await window.electronAPI.compressPDFs({ inputFolder: labelCompress.value, outputFolder: compressOutputFolder, quality });
       if (res && Array.isArray(res.log)) res.log.forEach((m: string) => log(m, m.includes('Ошибка') ? 'error' : 'info'));
       showPopup(`Сжатие завершено: обработано ${res.processed}/${res.total}`, 6000);
@@ -212,6 +228,83 @@ function updateCompressReady() {
       setBusy(false);
     }
   });
+
+// Обработчик прогресса — обновляет/добавляет строку и прогресс бар
+window.electronAPI.onCompressProgress((_, payload) => {
+  try {
+    const { index, total, name, inSize, outSize, ok, error, notes } = payload as any;
+    // обновляем прогресс-бар
+    if (compressProgressFill) {
+      const pct = total > 0 ? Math.round((index / total) * 100) : 0;
+      compressProgressFill.style.width = `${pct}%`;
+    }
+
+    // добавляем или обновляем строку в таблице
+    if (!compressTableBody) return;
+    // найдём существующую строку по имени (data-name)
+    let row = compressTableBody.querySelector(`tr[data-name="${CSS.escape(name)}"]`) as HTMLTableRowElement | null;
+    if (!row) {
+      row = document.createElement('tr');
+      row.setAttribute('data-name', name);
+      row.innerHTML = `<td style="padding:6px 8px; width:40px;">${index}</td>
+                       <td style="padding:6px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</td>
+                       <td style="padding:6px 8px; width:120px;">${inSize ? formatBytes(inSize) : ''}</td>
+                       <td style="padding:6px 8px; width:120px;">${outSize ? formatBytes(outSize) : ''}</td>
+                       <td style="padding:6px 8px; width:90px;">${computePercent(inSize, outSize)}</td>
+                       <td style="padding:6px 8px; width:140px;">${ok ? (notes || 'OK') : (error || 'ERROR')}</td>`;
+      compressTableBody.appendChild(row);
+    } else {
+      // обновить существующий
+      // индекс может меняться для удобства (в случае перезапуска списка его обычно используют как порядок поступления)
+      const cells = row.querySelectorAll('td');
+      if (cells && cells.length >= 6) {
+        (cells[0] as HTMLTableCellElement).textContent = String(index);
+        (cells[2] as HTMLTableCellElement).textContent = inSize ? formatBytes(inSize) : '';
+        (cells[3] as HTMLTableCellElement).textContent = outSize ? formatBytes(outSize) : '';
+        (cells[4] as HTMLTableCellElement).textContent = computePercent(inSize, outSize);
+        (cells[5] as HTMLTableCellElement).textContent = ok ? (notes || 'OK') : (error || 'ERROR');
+      }
+    }
+  } catch (e) { console.error('compress-progress handler error', e); }
+});
+
+// Обработчик завершения — включает кнопку отчёта и показывает уведомление
+window.electronAPI.onCompressComplete((_, payload) => {
+  try {
+    const { processed, total, log } = payload as any;
+    if (compressProgressFill) compressProgressFill.style.width = '100%';
+    log && Array.isArray(log) && log.forEach((m: string) => logMessage(m));
+    showPopup(`Сжатие завершено: ${processed}/${total}`, 8000);
+    // таблица остаётся видимой, готова к следующей обработке (clearCompressTable() будет вызвана при старте следующей)
+  } catch (e) { console.error('compress-complete handler error', e); }
+});
+
+// Кнопка "Открыть отчёт" — открывает файл отчёта в системе
+if (btnOpenReport) btnOpenReport.addEventListener('click', async () => {
+  if (!lastReportPath) { showPopup('Отчёт не найден', 4000); return; }
+  try {
+    await window.electronAPI.openFolder(lastReportPath);
+  } catch (err) {
+    showPopup('Не удалось открыть отчёт', 4000);
+  }
+});
+
+// Вспомогательные функции
+function computePercent(inSize?: number, outSize?: number) {
+  if (!inSize || !outSize) return '';
+  const diff = inSize - outSize;
+  const pct = Math.round((diff / inSize) * 100);
+  return pct >= 0 ? `-${pct}%` : `+${-pct}%`;
+}
+function formatBytes(bytes?: number) {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+// Лог через привычную функцию (имя отличается от window.log)
+function logMessage(msg: string) { try { log(msg, msg.includes('Ошибка') ? 'error' : msg.includes('GS') ? 'info' : 'info'); } catch { console.log(msg); } }
 
 /* Блокировка UI и показ/скрытие спиннера */
 const setBusy = (busy: boolean) => {
@@ -574,15 +667,31 @@ function showPopup(message: string, timeout = 8000) {
 
 /* UI режимы */
 function showMode(modeId: string) {
+  // Скрываем все основные панели
   mode1Content.style.display = 'none';
   settingsContent.style.display = 'none';
   mode2Content.style.display = 'none';
+
+  // Показываем только выбранную панель
   if (modeId === 'mode1') mode1Content.style.display = 'block';
   else if (modeId === 'settings') settingsContent.style.display = 'block';
   else if (modeId === 'compress') mode2Content.style.display = 'block';
+
+  // Обновляем классы навигации
   navMode1.classList.toggle('active', modeId === 'mode1');
   navSettings.classList.toggle('active', modeId === 'settings');
   navMode2.classList.toggle('active', modeId === 'compress');
+
+  // Управление видимостью контейнера compress-controls (грузим элемент)
+  const compressContainer = document.getElementById('compress-controls') as HTMLElement | null;
+  if (compressContainer) {
+    compressContainer.style.display = (modeId === 'compress') ? '' : 'none';
+  }
+
+  // При входе в режим compress — обновим состояние готовности кнопки
+  if (modeId === 'compress') {
+    try { updateCompressReady(); } catch { /* ignore */ }
+  }
 }
 
 /* Инициализация */

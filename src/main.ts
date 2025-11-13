@@ -544,7 +544,10 @@ ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder, quality 
     if (gsCmd) result.used = `ghostscript (${gsCmd})`;
     else result.used = 'pdf-lib(fallback)';
 
+    // цикл по файлам — после каждого файла отправляем событие прогресса
+    let index = 0;
     for (const fname of pdfs) {
+      index++;
       const inP = path.join(inputFolder, fname);
       const outP = path.join(outputFolder, fname);
       const fileInfo: any = { name: fname, ok: false };
@@ -568,21 +571,14 @@ ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder, quality 
             `-dPDFSETTINGS=${pdfSetting}`,
             '-dNOPAUSE',
             '-dBATCH',
-            // убираем -dQUIET для диагностики
             `-sOutputFile=${tmpOut}`,
             tmpIn
           ];
 
           try {
             const { stdout, stderr } = await execFileAsync(gsCmd, args);
-            if (stdout) {
-              result.log.push(`[gs stdout] ${String(stdout).trim()}`);
-              if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `[gs stdout] ${String(stdout).trim()}`);
-            }
-            if (stderr) {
-              result.log.push(`[gs stderr] ${String(stderr).trim()}`);
-              if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `[gs stderr] ${String(stderr).trim()}`);
-            }
+            if (stdout) result.log.push(`[gs stdout] ${String(stdout).trim()}`);
+            if (stderr) result.log.push(`[gs stderr] ${String(stderr).trim()}`);
 
             if (!(await fs.pathExists(tmpOut))) {
               throw new Error(`Ghostscript не создал выходной файл (tmpOut отсутствует)`);
@@ -592,19 +588,16 @@ ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder, quality 
             await fs.copy(tmpOut, outP, { overwrite: true });
 
             fileInfo.ok = true;
-            fileInfo.notes = `compressed with GS setting=${pdfSetting}`;
+            fileInfo.notes = `GS:${pdfSetting}`;
             result.log.push(`GS: ${fname} -> ${outP} (${pdfSetting})`);
-            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `GS: ${fname} -> ${outP} (${pdfSetting})`);
           } catch (gsErr) {
             const gsErrMsg = (gsErr as Error).message || String(gsErr);
+            fileInfo.error = `GS error: ${gsErrMsg}`;
             result.log.push(`GS error for ${fname}: ${gsErrMsg}`);
-            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `GS error for ${fname}: ${gsErrMsg}`);
-
-            // Попытка очистки временных файлов перед fallback
+            // очистка tmp перед fallback
             try { if (await fs.pathExists(tmpIn)) await fsp.unlink(tmpIn); } catch {}
             try { if (await fs.pathExists(tmpOut)) await fsp.unlink(tmpOut); } catch {}
-
-            // не возвращаемся — продолжим с fallback
+            // продолжим — будет выполнен fallback
           }
         }
 
@@ -616,14 +609,12 @@ ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder, quality 
             const newBuf = await doc.save({ useObjectStreams: true });
             await fsp.writeFile(outP, newBuf);
             fileInfo.ok = true;
-            fileInfo.notes = 'fallback pdf-lib';
+            fileInfo.notes = 'pdf-lib fallback';
             result.log.push(`Fallback: ${fname} -> ${outP}`);
-            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', `Fallback: ${fname} -> ${outP}`);
           } catch (fbErr) {
             const em = `Fallback error ${fname}: ${(fbErr as Error).message}`;
             fileInfo.error = em;
             result.log.push(em);
-            if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', em);
           }
         }
 
@@ -640,22 +631,37 @@ ipcMain.handle('compress-pdfs', async (_e, { inputFolder, outputFolder, quality 
         const em = `Ошибка при обработке ${fname}: ${(err as Error).message}`;
         fileInfo.error = em;
         result.log.push(em);
-        if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', em);
       } finally {
-        // Гарантированная очистка tmp-файлов текущей итерации
+        // очистка tmp-файлов текущей итерации
         try { if (await fs.pathExists(tmpIn)) await fsp.unlink(tmpIn); } catch {}
         try { if (await fs.pathExists(tmpOut)) await fsp.unlink(tmpOut); } catch {}
 
         result.files!.push(fileInfo);
+
+        // отправляем прогресс в renderer (mainWindow)
+        try {
+          mainWindow?.webContents.send('compress-progress', {
+            index,
+            total: result.total,
+            name: fileInfo.name,
+            inSize: fileInfo.inSize,
+            outSize: fileInfo.outSize,
+            ok: fileInfo.ok,
+            error: fileInfo.error || null,
+            notes: fileInfo.notes || null
+          });
+        } catch { /* ignore */ }
       }
     }
 
+    // посылаем событие завершения (без создания CSV-отчёта)
+    mainWindow?.webContents.send('compress-complete', { processed: result.processed, total: result.total, log: result.log });
     result.log.unshift(`Сжатие завершено. Engine: ${result.used}`);
     return result;
   } catch (err) {
     const em = `Ошибка compress-pdfs: ${(err as Error).message}`;
     result.log.push(em);
-    if (logWindow && !logWindow.isDestroyed()) logWindow.webContents.send('log-append', em);
+    mainWindow?.webContents.send('compress-complete', { processed: result.processed, total: result.total, log: result.log });
     return result;
   }
 });

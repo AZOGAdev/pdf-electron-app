@@ -886,114 +886,135 @@
             </div>
         </div>
 
-        <!-- Содержимое вкладки Настройки -->
-    <div id="settings-content" class="settings-section" style="display: none;">
-        <div class="content-header">
-            <i data-lucide="settings" class="w-5 h-5"></i>
-            Настройки
-        </div>
-
-        <div class="settings-item">
-            <div class="settings-title">Тема</div>
-            <div class="theme-toggle">
-                <input type="checkbox" id="theme-toggle-checkbox">
-                <label for="theme-toggle-checkbox">Темная тема</label>
-            </div>
-        </div>
-
-        <div class="settings-item">
-            <div class="settings-title">Обновления</div>
-            <div class="update-controls">
-                <button id="btn-check-update" class="btn btn-secondary">
-                    Проверить обновления
-                </button>
-                <span id="update-status" class="update-status">Проверка обновлений...</span>
-                <button id="btn-update-app" class="btn btn-primary" style="display: none;">Установить обновление</button>
-            </div>
-        </div>
-
-        <div class="settings-item">
-            <div class="settings-title">Обратная связь</div>
-            <div id="feedback-form" class="feedback-controls">
-                <p class="text-sm text-gray-600 mb-2">Нашли ошибку или есть предложение по улучшению?</p>
-                
-                <div class="mb-3">
-                    <label for="feedback-type" class="block text-xs font-medium text-gray-700 mb-1">Тип сообщения</label>
-                    <select id="feedback-type" class="folder-input w-full text-sm">
-                        <option value="bug">Ошибка</option>
-                        <option value="feature">Предложение по улучшению</option>
-                        <option value="other">Другое</option>
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label for="feedback-message" class="block text-xs font-medium text-gray-700 mb-1">Сообщение *</label>
-                    <textarea id="feedback-message" rows="4" class="folder-input w-full text-sm" placeholder="Опишите проблему или предложение..."></textarea>
-                </div>
-
-                <div class="flex items-center mb-4">
-                    <input type="checkbox" id="feedback-include-log" class="checkbox-input mr-2">
-                    <label for="feedback-include-log" class="text-xs text-gray-600">Приложить последний лог (поможет быстрее решить проблему)</label>
-                </div>
-
-                <div class="flex flex-wrap items-center">
-                    <button id="btn-send-feedback" class="btn btn-outline text-sm">
-                        Отправить Email
-                    </button>
-                    <span id="feedback-status" class="ml-3 text-xs"></span>
-                </div>
-            </div>
-        </div>
-    </div>
-            <div id="compress-content" class="content-section" style="display: none;">
+            <!-- Содержимое вкладки Настройки -->
+            <div id="settings-content" class="settings-section" style="display: none;">
                 <div class="content-header">
-                    Сжатие PDF
+                    <i data-lucide="settings" class="w-5 h-5"></i>
+                    Настройки
                 </div>
 
-                <div class="folder-section">
-                    <div class="folder-group">
-                    <label class="folder-label">Папка с PDF (вход)</label>
-                    <div class="folder-input-container">
-                        <input type="text" id="label-compress" value="Не выбрана" readonly class="folder-input">
-                        <button id="btn-compress" class="btn btn-primary">
-                        Выбрать
+                <div class="settings-item">
+                    <div class="settings-title">Тема</div>
+                    <div class="theme-toggle">
+                        <input type="checkbox" id="theme-toggle-checkbox">
+                        <label for="theme-toggle-checkbox">Темная тема</label>
+                    </div>
+                </div>
+
+                <div class="settings-item">
+                    <div class="settings-title">Обновления</div>
+                    <div class="update-controls">
+                        <button id="btn-check-update" class="btn btn-secondary">
+                            Проверить обновления
                         </button>
-                    </div>
-
-                    <div style="margin-top:0.75rem; display:flex; align-items:center; gap:8px;">
-                        <label for="compress-quality" style="margin:0; font-size:13px; color:var(--text-color);">Качество:</label>
-                        <select id="compress-quality" class="folder-input" style="width:140px; padding:6px;">
-                        <option value="10">Очень слабое (≈10%)</option>
-                        <option value="20">Низкое (≈20%)</option>
-                        <option value="30" selected>Среднее (≈30%)</option>
-                        <option value="40">Высокое (≈40%)</option>
-                        <option value="50">Макс. качество (≈50%)</option>
-                        </select>
-                        <div style="flex:1"></div>
-                    </div>
-                    </div>
-
-                    <!-- НОВОЕ: выбор папки результатов для сжатия -->
-                    <div class="folder-group">
-                    <label class="folder-label">Папка результатов (выход)</label>
-                    <div class="folder-input-container">
-                        <input type="text" id="label-compress-output" value="Не выбрана" readonly class="folder-input">
-                        <button id="btn-compress-output" class="btn btn-primary">
-                        Выбрать
-                        </button>
-                    </div>
+                        <span id="update-status" class="update-status">Проверка обновлений...</span>
+                        <button id="btn-update-app" class="btn btn-primary" style="display: none;">Установить обновление</button>
                     </div>
                 </div>
 
-                <div class="controls-row">
-                    <button id="btn-compress-run" class="btn btn-secondary" disabled>
-                    Начать сжатие
-                    </button>
+                <div class="settings-item">
+                    <div class="settings-title">Обратная связь</div>
+                    <div id="feedback-form" class="feedback-controls">
+                        <p class="text-sm text-gray-600 mb-2">Нашли ошибку или есть предложение по улучшению?</p>
+                        
+                        <div class="mb-3">
+                            <label for="feedback-type" class="block text-xs font-medium text-gray-700 mb-1">Тип сообщения</label>
+                            <select id="feedback-type" class="folder-input w-full text-sm">
+                                <option value="bug">Ошибка</option>
+                                <option value="feature">Предложение по улучшению</option>
+                                <option value="other">Другое</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="feedback-message" class="block text-xs font-medium text-gray-700 mb-1">Сообщение *</label>
+                            <textarea id="feedback-message" rows="4" class="folder-input w-full text-sm" placeholder="Опишите проблему или предложение..."></textarea>
+                        </div>
+
+                        <div class="flex items-center mb-4">
+                            <input type="checkbox" id="feedback-include-log" class="checkbox-input mr-2">
+                            <label for="feedback-include-log" class="text-xs text-gray-600">Приложить последний лог (поможет быстрее решить проблему)</label>
+                        </div>
+
+                        <div class="flex flex-wrap items-center">
+                            <button id="btn-send-feedback" class="btn btn-outline text-sm">
+                                Отправить Email
+                            </button>
+                            <span id="feedback-status" class="ml-3 text-xs"></span>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+            <!-- Обновлённый фрагмент compress-content: все контролы сжатиия обёрнуты в #compress-controls -->
+<div id="compress-content" class="content-section" style="display: none;">
+  <div class="content-header">Сжатие PDF</div>
+
+  <div id="compress-controls">
+    <div class="folder-section">
+      <div class="folder-group">
+        <label class="folder-label">Папка с PDF (вход)</label>
+        <div class="folder-input-container">
+          <input type="text" id="label-compress" value="Не выбрана" readonly class="folder-input">
+          <button id="btn-compress" class="btn btn-primary">Выбрать</button>
         </div>
-    </div>
+
+        <div style="margin-top:0.75rem; display:flex; align-items:center; gap:8px;">
+          <label for="compress-quality" style="margin:0; font-size:13px; color:var(--text-color);">Качество:</label>
+          <select id="compress-quality" class="folder-input" style="width:140px; padding:6px;">
+            <option value="10">Очень слабое (≈10%)</option>
+            <option value="20">Низкое (≈20%)</option>
+            <option value="30" selected>Среднее (≈30%)</option>
+            <option value="40">Высокое (≈40%)</option>
+            <option value="50">Макс. качество (≈50%)</option>
+          </select>
+          <div style="flex:1"></div>
+        </div>
+      </div>
+
+      <div class="folder-group">
+        <label class="folder-label">Папка результатов (выход)</label>
+        <div class="folder-input-container">
+          <input type="text" id="label-compress-output" value="Не выбрана" readonly class="folder-input">
+          <button id="btn-compress-output" class="btn btn-primary">Выбрать</button>
+        </div>
+      </div>
     </div>
 
+    <div style="margin-top:12px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:13px;margin-bottom:6px;">Прогресс сжатия</div>
+          <div style="height:10px;background:var(--progress-bar-bg);border-radius:6px;overflow:hidden;">
+            <div id="compress-progress-fill" style="height:100%; width:0%; background:var(--progress-bar-fill); transition:width .25s ease;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div style="width:100%; overflow:auto;">
+          <table id="compress-table" style="width:100%; border-collapse:collapse; font-family:monospace; font-size:13px; min-width:700px;">
+            <thead>
+              <tr style="text-align:left; border-bottom:1px solid var(--sidebar-border);">
+                <th style="padding:6px 8px; width:40px;">#</th>
+                <th style="padding:6px 8px;">Файл</th>
+                <th style="padding:6px 8px; width:120px;">Исходный</th>
+                <th style="padding:6px 8px; width:120px;">Результат</th>
+                <th style="padding:6px 8px; width:90px;">Изм., %</th>
+                <th style="padding:6px 8px; width:140px;">Статус</th>
+              </tr>
+            </thead>
+            <tbody style="max-height:280px; display:block; overflow:auto; width:100%;"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-row" style="margin-top:12px;">
+      <button id="btn-compress-run" class="btn btn-secondary" disabled>Начать сжатие</button>
+    </div>
+  </div>
+</div>
     <!-- Всплывающее уведомление об обновлении (по умолчанию скрыто) -->
     <div id="update-notification" class="update-notification hidden">
   <div class="update-notification-content">
